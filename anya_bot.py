@@ -4,18 +4,33 @@ import feedparser
 import asyncio
 import os
 from datetime import datetime
+from flask import Flask
+import threading
 
-# Feeds
+# --- Flask keep-alive server ---
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "I'm alive!", 200
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+# Start Flask in a separate thread
+threading.Thread(target=run_flask).start()
+
+# --- Discord Bot Setup ---
 HUMBLE_RSS_URL = 'https://blog.humblebundle.com/rss/'
 FANATICAL_RSS_URL = 'https://blog.fanatical.com/en/feed/'
 
-# Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 posted_titles = set()
 start_time = datetime.now()
+
 channel_id = int(os.getenv('CHANNEL_ID', '1384937321555689642'))
 
 # --- Commands ---
@@ -59,6 +74,10 @@ async def help(ctx):
 @tasks.loop(minutes=10)
 async def check_feeds():
     channel = bot.get_channel(channel_id)
+    if channel is None:
+        print(f"Could not find channel with ID {channel_id}")
+        return
+
     feeds = [
         (HUMBLE_RSS_URL, "Humble Bundle"),
         (FANATICAL_RSS_URL, "Fanatical")
@@ -84,7 +103,7 @@ async def check_feeds():
                 embed.set_footer(text=f"Posted at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 await channel.send(embed=embed)
 
-# --- Ready Event ---
+# --- On Ready Event ---
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
@@ -93,5 +112,5 @@ async def on_ready():
     )
     check_feeds.start()
 
-# --- Run ---
+# --- Run Bot ---
 bot.run(os.getenv('DISCORD_TOKEN'))
