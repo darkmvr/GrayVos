@@ -51,6 +51,8 @@ async def uptime(ctx):
 async def status(ctx):
     await ctx.send("✅ Bot is online and monitoring bundles.")
 
+channel_id = 1384937321555689642
+
 @bot.command()
 async def info(ctx):
     embed = discord.Embed(title="🤖 Bot Info", color=discord.Color.blurple())
