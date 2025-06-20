@@ -17,8 +17,8 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
 
-# Start Flask in a separate thread
-threading.Thread(target=run_flask).start()
+# Start Flask in a separate daemon thread (won't block program exit)
+threading.Thread(target=run_flask, daemon=True).start()
 
 # --- Discord Bot Setup ---
 HUMBLE_RSS_URL = 'https://blog.humblebundle.com/rss/'
@@ -31,7 +31,11 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 posted_titles = set()
 start_time = datetime.now()
 
-channel_id = int(os.getenv('CHANNEL_ID', '1384937321555689642'))
+try:
+    channel_id = int(os.getenv('CHANNEL_ID'))
+except (TypeError, ValueError):
+    print("ERROR: CHANNEL_ID environment variable is not set or invalid!")
+    channel_id = None
 
 # --- Commands ---
 @bot.command()
@@ -73,6 +77,10 @@ async def help(ctx):
 # --- Background Task ---
 @tasks.loop(minutes=10)
 async def check_feeds():
+    if channel_id is None:
+        print("Skipping feed check: invalid CHANNEL_ID")
+        return
+
     channel = bot.get_channel(channel_id)
     if channel is None:
         print(f"Could not find channel with ID {channel_id}")
@@ -107,10 +115,13 @@ async def check_feeds():
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
-    await bot.change_presence(
-        activity=discord.Game("bundles | !help")
-    )
-    check_feeds.start()
+    await bot.change_presence(activity=discord.Game("bundles | !help"))
+    if not check_feeds.is_running():
+        check_feeds.start()
 
 # --- Run Bot ---
-bot.run(os.getenv('DISCORD_TOKEN'))
+token = os.getenv('DISCORD_TOKEN')
+if token is None:
+    print("ERROR: DISCORD_TOKEN environment variable is not set!")
+else:
+    bot.run(token)
