@@ -27,7 +27,7 @@ FANATICAL_RSS_URL = 'https://blog.fanatical.com/en/feed/'
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 posted_titles = set()
 start_time = datetime.now()
 
