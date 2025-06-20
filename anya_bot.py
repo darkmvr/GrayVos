@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
 import feedparser
-import asyncio
 import os
 from datetime import datetime
 from flask import Flask
