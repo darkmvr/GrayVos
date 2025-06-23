@@ -8,6 +8,7 @@ from flask import Flask
 import threading
 import random
 import requests
+from bs4 import BeautifulSoup
 
 # --- Flask keep-alive server ---
 app = Flask("")
@@ -106,7 +107,35 @@ anya_statuses = [
     "watching Yor train while updating feeds 🥵"
 ]
 
+# --- Helper Functions ---
+
+def is_bundle_post(title, link):
+    keywords = ['bundle', 'sale', 'deal', 'game', 'offer', 'discount']
+    title_lower = title.lower()
+    if any(k in title_lower for k in keywords):
+        return True
+    link_lower = link.lower()
+    if any(k in link_lower for k in keywords):
+        return True
+    return False
+
+def fetch_thumbnail_from_url(url):
+    try:
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            og_image = soup.find('meta', property='og:image')
+            if og_image and og_image.get('content'):
+                return og_image['content']
+            img_src = soup.find('link', rel='image_src')
+            if img_src and img_src.get('href'):
+                return img_src['href']
+    except Exception as e:
+        print(f"Error fetching thumbnail from {url}: {e}")
+    return None
+
 # --- Commands ---
+
 @bot.command()
 async def ping(ctx):
     latency = round(bot.latency * 1000)
@@ -137,7 +166,7 @@ async def help(ctx):
         "!info": "Spy report about the bot",
         "!status": "Current mission status",
         "!help": "What Anya can do",
-        "!latestbundle": "Shows latest bundle manually"
+        "!latestbundle": "Show latest detected game bundle"
     }
     embed = discord.Embed(title="📋 Spy Commands", color=discord.Color.gold())
     for cmd, desc in commands_info.items():
@@ -147,36 +176,48 @@ async def help(ctx):
 
 @bot.command()
 async def latestbundle(ctx):
-    """Posts the latest bundle from the monitored feeds"""
     channel = ctx.channel
     for feed_url, source in FEED_SOURCES:
         feed = feedparser.parse(feed_url)
         if not feed.entries:
             continue
-        entry = feed.entries[0]  # latest entry
-        embed = discord.Embed(
-            title=f"🎮 Latest {source} Bundle!",
-            description=entry.title,
-            url=entry.link,
-            color=discord.Color.orange() if "humble" in source.lower() else discord.Color.red(),
-            timestamp=datetime.now()
-        )
-        if hasattr(entry, 'summary'):
-            summary = entry.summary[:200] + '...' if len(entry.summary) > 200 else entry.summary
-            embed.add_field(name="📝 Summary", value=summary, inline=False)
+        # Find the first real bundle post
+        for entry in feed.entries:
+            if not is_bundle_post(entry.title, entry.link):
+                continue
+            embed = discord.Embed(
+                title=f"🎮 Latest {source} Bundle!",
+                description=entry.title,
+                url=entry.link,
+                color=discord.Color.orange() if "humble" in source.lower() else discord.Color.red(),
+                timestamp=datetime.now()
+            )
+            if hasattr(entry, 'summary'):
+                summary = entry.summary[:200] + '...' if len(entry.summary) > 200 else entry.summary
+                embed.add_field(name="📝 Summary", value=summary, inline=False)
 
-        if 'media_thumbnail' in entry:
-            embed.set_image(url=entry.media_thumbnail[0]['url'])
-        elif 'media_content' in entry:
-            embed.set_image(url=entry.media_content[0]['url'])
-        elif 'image' in entry:
-            embed.set_image(url=entry.image.href)
+            # Try to get image from feed first
+            image_url = None
+            if 'media_thumbnail' in entry:
+                image_url = entry.media_thumbnail[0]['url']
+            elif 'media_content' in entry:
+                image_url = entry.media_content[0]['url']
+            elif 'image' in entry:
+                image_url = entry.image.href
+            
+            # If no image from feed, try to scrape from the page itself
+            if not image_url:
+                image_url = fetch_thumbnail_from_url(entry.link)
+            
+            if image_url:
+                embed.set_image(url=image_url)
 
-        embed.set_footer(text=random.choice(anya_quotes))
-        await channel.send(embed=embed)
-        break  # only post one latest bundle, stop after first feed with entries
+            embed.set_footer(text=random.choice(anya_quotes))
+            await channel.send(embed=embed)
+            break  # stop after first valid bundle found
 
 # --- Background Task ---
+
 @tasks.loop(minutes=10)
 async def check_feeds():
     channel = bot.get_channel(channel_id)
@@ -202,6 +243,10 @@ async def check_feeds():
             for entry in feed.entries:
                 if entry.title in posted_titles:
                     continue
+                # Skip non-bundle posts
+                if not is_bundle_post(entry.title, entry.link):
+                    continue
+
                 posted_titles.add(entry.title)
 
                 embed = discord.Embed(
@@ -216,12 +261,21 @@ async def check_feeds():
                     summary = entry.summary[:200] + '...' if len(entry.summary) > 200 else entry.summary
                     embed.add_field(name="📝 Summary", value=summary, inline=False)
 
+                # Try to get image from feed first
+                image_url = None
                 if 'media_thumbnail' in entry:
-                    embed.set_image(url=entry.media_thumbnail[0]['url'])
+                    image_url = entry.media_thumbnail[0]['url']
                 elif 'media_content' in entry:
-                    embed.set_image(url=entry.media_content[0]['url'])
+                    image_url = entry.media_content[0]['url']
                 elif 'image' in entry:
-                    embed.set_image(url=entry.image.href)
+                    image_url = entry.image.href
+                
+                # If no image from feed, try to scrape from the page itself
+                if not image_url:
+                    image_url = fetch_thumbnail_from_url(entry.link)
+                
+                if image_url:
+                    embed.set_image(url=image_url)
 
                 embed.set_footer(text=random.choice(anya_quotes))
                 await channel.send(embed=embed)
@@ -233,6 +287,7 @@ async def check_feeds():
             feed_failures[feed_url] = feed_failures.get(feed_url, 0) + 1
 
 # --- On Ready Event ---
+
 @bot.event
 async def on_ready():
     print(f"✅ Anya has connected as {bot.user}")
