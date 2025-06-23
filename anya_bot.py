@@ -26,15 +26,12 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
 
-# Start Flask in a separate daemon thread
 threading.Thread(target=run_flask, daemon=True).start()
 
 # --- Discord Bot Setup ---
 FEED_SOURCES = [
     ('https://blog.humblebundle.com/rss/', 'Humble Bundle'),
-    ('https://blog.fanatical.com/en/feed/', 'Fanatical'),
-    ('https://gg.deals/rss/', 'GG.deals'),
-    ('https://go-humble.com/feed/', 'Go-Humble')
+    ('https://blog.fanatical.com/en/feed/', 'Fanatical')
 ]
 
 feed_failures = {}
@@ -53,9 +50,9 @@ channel_id = int(os.getenv('CHANNEL_ID'))
 anya_quotes = [
     "Anya found this bundle! Waku waku~~! 🥜",
     "Anya spy mission: deliver new games. Success! 👀",
-    "Oooh, Anya thinks you might like this one!",
+    "Oooh, Anya thinks chichi would like this one!",
     "This bundle smells like peanuts and fun. 🥜",
-    "Hehe~ Papa would buy this for sure.",
+    "Hehe~ haha would smash if no one buys this one!",
     "New games = more friends = world peace!",
     "Anya read minds and this one looked good!",
     "Waku waku~! Another bundle spotted!",
@@ -63,27 +60,21 @@ anya_quotes = [
     "Heh! Anya is best bundle spy!",
     "Spy report complete! Bundle delivered.",
     "Your mission is to click this bundle! 🕵️",
-    "Loid-san would approve this deal!",
+    "Chichi would approve this deal!",
     "For the mission... for the fun... for the peanuts~",
     "Ooooooh! Shiny bundle!",
     "Hehe~ Anya pressed the button. Good button.",
     "Waku waku~! Anya did something useful!",
-    "Hah! Anya's spy senses were tingling!",
     "Twilight would say this is 'efficient'!",
     "Bond says this bundle has good vibes.",
-    "Yor would smash if no one buys this one!",
     "Anya detected value... 10/10 mission success!",
     "More games = less homework, right? 😈",
     "Waku waku~! Buy this or face peanut wrath!",
     "Shhh... secret bundle intel! 🤫",
-    "Waku waku overload! This bundle is top tier~",
-    "This deal made Anya's face go ⊙﹏⊙",
-    "Loid doesn't know I posted this hehe~",
+    "This deal made Anya's face go ⊙＿⊙",
     "Why does bundle smell like... victory?",
-    "Bundle detected! Waku waku alert~",
     "Hmm... yes. Very bundle. Very wow~",
     "This deal smells like spy success 🕶️",
-    "No lie detector needed—this bundle is good!",
     "Even Chimera-san approves this one~"
 ]
 
@@ -96,94 +87,29 @@ anya_statuses = [
     "gathering bundle intel 🧠",
     "tracking shiny discounts 💰",
     "on peanut break (still watching) 🥜",
-    "bundle hunting with psychic power",
     "dreaming of game world domination",
     "plotting secret bundle heist 👧",
-    "sending Loid secret sales data",
+    "sending chichi secret sales data",
     "writing fake homework while spying...",
     "Bond sees bundle future!",
     "Waku waku mode: ENGAGED!",
-    "Analyzing bundle vibes~",
-    "watching Yor train while updating feeds 🥵"
+    "Analyzing bundle vibes~"
 ]
 
-# --- Helper Functions ---
-
-def is_bundle_post(title, link):
-    keywords = ['bundle', 'sale', 'deal', 'game', 'offer', 'discount']
-    title_lower = title.lower()
-    if any(k in title_lower for k in keywords):
-        return True
-    link_lower = link.lower()
-    if any(k in link_lower for k in keywords):
-        return True
-    return False
-
-def fetch_thumbnail_from_url(url):
-    try:
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            og_image = soup.find('meta', property='og:image')
-            if og_image and og_image.get('content'):
-                return og_image['content']
-            img_src = soup.find('link', rel='image_src')
-            if img_src and img_src.get('href'):
-                return img_src['href']
-    except Exception as e:
-        print(f"Error fetching thumbnail from {url}: {e}")
-    return None
+# --- Helper ---
+def is_bundle_post(entry):
+    title = entry.title.lower()
+    return any(keyword in title for keyword in ["bundle", "choice", "deal", "reveal", "collection"])
 
 # --- Commands ---
-
-@bot.command()
-async def ping(ctx):
-    latency = round(bot.latency * 1000)
-    await ctx.send(f"🏓 Pong! Anya's brain ping is {latency}ms.")
-
-@bot.command()
-async def uptime(ctx):
-    uptime_duration = datetime.now() - start_time
-    await ctx.send(f"⏰ Anya has been spying for {str(uptime_duration).split('.')[0]}")
-
-@bot.command()
-async def status(ctx):
-    await ctx.send("✅ Anya is online! Bundles are under watch.")
-
-@bot.command()
-async def info(ctx):
-    embed = discord.Embed(title="🧠 Anya Info Report", color=discord.Color.pink())
-    embed.add_field(name="Guilds", value=len(bot.guilds), inline=True)
-    embed.add_field(name="Users", value=len(bot.users), inline=True)
-    embed.add_field(name="Latency", value=f"{round(bot.latency * 1000)}ms", inline=True)
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def help(ctx):
-    commands_info = {
-        "!ping": "Check Anya's latency",
-        "!uptime": "See how long Anya has been working",
-        "!info": "Spy report about the bot",
-        "!status": "Current mission status",
-        "!help": "What Anya can do",
-        "!latestbundle": "Show latest detected game bundle"
-    }
-    embed = discord.Embed(title="📋 Spy Commands", color=discord.Color.gold())
-    for cmd, desc in commands_info.items():
-        embed.add_field(name=cmd, value=desc, inline=False)
-    embed.set_footer(text="Hehe~ Anya is a good bot.")
-    await ctx.send(embed=embed)
-
 @bot.command()
 async def latestbundle(ctx):
-    channel = ctx.channel
     for feed_url, source in FEED_SOURCES:
         feed = feedparser.parse(feed_url)
         if not feed.entries:
             continue
-        # Find the first real bundle post
         for entry in feed.entries:
-            if not is_bundle_post(entry.title, entry.link):
+            if not is_bundle_post(entry):
                 continue
             embed = discord.Embed(
                 title=f"🎮 Latest {source} Bundle!",
@@ -193,31 +119,22 @@ async def latestbundle(ctx):
                 timestamp=datetime.now()
             )
             if hasattr(entry, 'summary'):
-                summary = entry.summary[:200] + '...' if len(entry.summary) > 200 else entry.summary
-                embed.add_field(name="📝 Summary", value=summary, inline=False)
+                soup = BeautifulSoup(entry.summary, 'html.parser')
+                text_summary = soup.get_text()
+                summary = text_summary[:200] + '...' if len(text_summary) > 200 else text_summary
+                embed.add_field(name="📜 Summary", value=summary, inline=False)
 
-            # Try to get image from feed first
-            image_url = None
-            if 'media_thumbnail' in entry:
-                image_url = entry.media_thumbnail[0]['url']
-            elif 'media_content' in entry:
-                image_url = entry.media_content[0]['url']
-            elif 'image' in entry:
-                image_url = entry.image.href
-            
-            # If no image from feed, try to scrape from the page itself
-            if not image_url:
-                image_url = fetch_thumbnail_from_url(entry.link)
-            
-            if image_url:
-                embed.set_image(url=image_url)
+            if hasattr(entry, 'media_thumbnail'):
+                embed.set_image(url=entry.media_thumbnail[0]['url'])
+            elif hasattr(entry, 'media_content'):
+                embed.set_image(url=entry.media_content[0]['url'])
 
             embed.set_footer(text=random.choice(anya_quotes))
-            await channel.send(embed=embed)
-            break  # stop after first valid bundle found
+            await ctx.send(embed=embed)
+            return  # only post one
+    await ctx.send("No new bundles found waku waku~")
 
-# --- Background Task ---
-
+# --- Feed Checker ---
 @tasks.loop(minutes=10)
 async def check_feeds():
     channel = bot.get_channel(channel_id)
@@ -227,7 +144,6 @@ async def check_feeds():
 
     for feed_url, source in FEED_SOURCES:
         if feed_failures.get(feed_url, 0) >= MAX_FAILURES:
-            print(f"Skipping {source} - too many failures.")
             continue
 
         try:
@@ -236,15 +152,11 @@ async def check_feeds():
                 raise Exception(f"HTTP {response.status_code}")
 
             feed = feedparser.parse(response.content)
-
             if not feed.entries:
                 raise Exception("No entries in feed")
 
             for entry in feed.entries:
-                if entry.title in posted_titles:
-                    continue
-                # Skip non-bundle posts
-                if not is_bundle_post(entry.title, entry.link):
+                if entry.title in posted_titles or not is_bundle_post(entry):
                     continue
 
                 posted_titles.add(entry.title)
@@ -258,45 +170,35 @@ async def check_feeds():
                 )
 
                 if hasattr(entry, 'summary'):
-                    summary = entry.summary[:200] + '...' if len(entry.summary) > 200 else entry.summary
-                    embed.add_field(name="📝 Summary", value=summary, inline=False)
+                    soup = BeautifulSoup(entry.summary, 'html.parser')
+                    text_summary = soup.get_text()
+                    summary = text_summary[:200] + '...' if len(text_summary) > 200 else text_summary
+                    embed.add_field(name="📜 Summary", value=summary, inline=False)
 
-                # Try to get image from feed first
-                image_url = None
-                if 'media_thumbnail' in entry:
-                    image_url = entry.media_thumbnail[0]['url']
-                elif 'media_content' in entry:
-                    image_url = entry.media_content[0]['url']
-                elif 'image' in entry:
-                    image_url = entry.image.href
-                
-                # If no image from feed, try to scrape from the page itself
-                if not image_url:
-                    image_url = fetch_thumbnail_from_url(entry.link)
-                
-                if image_url:
-                    embed.set_image(url=image_url)
+                if hasattr(entry, 'media_thumbnail'):
+                    embed.set_image(url=entry.media_thumbnail[0]['url'])
+                elif hasattr(entry, 'media_content'):
+                    embed.set_image(url=entry.media_content[0]['url'])
 
                 embed.set_footer(text=random.choice(anya_quotes))
                 await channel.send(embed=embed)
 
-            feed_failures[feed_url] = 0  # reset failure count if successful
+            feed_failures[feed_url] = 0
 
         except Exception as e:
             print(f"❌ Failed to fetch {source}: {e}")
             feed_failures[feed_url] = feed_failures.get(feed_url, 0) + 1
 
-# --- On Ready Event ---
-
+# --- On Ready ---
 @bot.event
 async def on_ready():
-    print(f"✅ Anya has connected as {bot.user}")
+    print(f"✅ Anya is online as {bot.user}")
     await bot.change_presence(activity=discord.Game(random.choice(anya_statuses)))
     check_feeds.start()
 
 # --- Run Bot ---
 token = os.getenv('DISCORD_TOKEN')
-if not token:
-    print("ERROR: DISCORD_TOKEN environment variable is missing!")
-else:
+if token:
     bot.run(token)
+else:
+    print("ERROR: DISCORD_TOKEN environment variable is missing!")
