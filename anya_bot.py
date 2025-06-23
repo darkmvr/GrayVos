@@ -1,204 +1,140 @@
-import discord
-from discord.ext import commands, tasks
-import feedparser
 import asyncio
-import os
-from datetime import datetime
-from flask import Flask
-import threading
-import random
-import requests
-from bs4 import BeautifulSoup
+import datetime
+import time
+import calendar
 
-# --- Flask keep-alive server ---
-app = Flask("")
+import feedparser
+import hikari
+import lightbulb
 
-@app.route("/")
-def home():
-    return random.choice([
-        "Anya is alive and spying on bundles!",
-        "Mission report: Anya still active.",
-        "Bundle intel secure. Anya online!",
-        "Waku waku~! Anya is watching RSS feeds!",
-        "Anya is doing important spy work rn~ 🕵️‍♀️"
-    ]), 200
+# --- Configuration --- #
+TOKEN = "YOUR_BOT_TOKEN"  # Replace with your bot's token
+PREFIX = "!"
+# RSS feed URLs
+HUMBLE_RSS_URL = "https://blog.humblebundle.com/rss"
+FANATICAL_RSS_URL = "https://steamcommunity.com/groups/wearefanatical/rss"
 
-def run_flask():
-    app.run(host="0.0.0.0", port=8080)
+# Discord channel IDs to post the bundles
+# You should replace these with your actual channel IDs
+HUMBLE_CHANNEL_ID = 123456789012345678  # Channel for Humble Bundle posts
+FANATICAL_CHANNEL_ID = 234567890123456789  # Channel for Fanatical posts
 
-threading.Thread(target=run_flask, daemon=True).start()
+# --- Bot Setup --- #
+bot = lightbulb.BotApp(
+    token=TOKEN,
+    prefix=PREFIX,
+    intents=hikari.Intents.ALL_UNPRIVILEGED | hikari.Intents.MESSAGE_CONTENT
+)
 
-# --- Discord Bot Setup ---
-FEED_SOURCES = [
-    ('https://blog.humblebundle.com/rss/', 'Humble Bundle'),
-    ('https://blog.fanatical.com/en/feed/', 'Fanatical')
-]
+def _get_entry_datetime(entry):
+    """Return the datetime of a feed entry using updated or published time (UTC)."""
+    dt = None
+    if hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+        # Use calendar.timegm to treat struct_time as UTC
+        ts = calendar.timegm(entry.updated_parsed)
+        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+    elif hasattr(entry, 'published_parsed') and entry.published_parsed:
+        ts = calendar.timegm(entry.published_parsed)
+        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+    return dt
 
-feed_failures = {}
-MAX_FAILURES = 3
+async def _process_feed(feed_url, channel_id):
+    """
+    Parse the given RSS feed and post new entries (within 7 days) to the specified channel.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    threshold = now - datetime.timedelta(days=7)
+    feed = feedparser.parse(feed_url)
+    if not feed or not hasattr(feed, 'entries'):
+        return
+    for entry in feed.entries:
+        entry_dt = _get_entry_datetime(entry)
+        # Skip if entry has no date or is older than 7 days
+        if not entry_dt or entry_dt < threshold:
+            continue
+        title = entry.title
+        link = entry.link
+        description = entry.get('summary', '') or entry.get('description', '')
+        embed = hikari.Embed(title=title, url=link, description=description)
+        # If the entry has an image, set as thumbnail
+        image_url = None
+        if 'media_thumbnail' in entry:
+            image = entry.media_thumbnail
+            if isinstance(image, list) and image:
+                image_url = image[0].get('url')
+        elif 'media_content' in entry:
+            media = entry.media_content
+            if isinstance(media, list) and media:
+                image_url = media[0].get('url')
+        if not image_url and 'links' in entry:
+            for link_item in entry.links:
+                if link_item.get('rel') == 'enclosure' and link_item.get('type', '').startswith('image'):
+                    image_url = link_item.get('href')
+                    break
+        if image_url:
+            embed.set_thumbnail(image_url)
+        try:
+            await bot.rest.create_message(channel_id, embed=embed)
+        except Exception:
+            pass
 
-intents = discord.Intents.default()
-intents.message_content = True
+async def _bundle_feed_loop():
+    """
+    Background task that periodically checks RSS feeds for new bundles.
+    """
+    await bot.wait_until_started()
+    while True:
+        await _process_feed(HUMBLE_RSS_URL, HUMBLE_CHANNEL_ID)
+        await _process_feed(FANATICAL_RSS_URL, FANATICAL_CHANNEL_ID)
+        # Check every hour
+        await asyncio.sleep(3600)
 
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
-posted_titles = set()
-start_time = datetime.now()
+@bot.listen(hikari.StartedEvent)
+async def on_bot_started(event):
+    bot.create_task(_bundle_feed_loop())
 
-channel_id = int(os.getenv('CHANNEL_ID'))
-
-# --- Anya Personality Snippets ---
-anya_quotes = [
-    "Anya found this bundle! Waku waku~~! 🥜",
-    "Anya spy mission: deliver new games. Success! 👀",
-    "Oooh, Anya thinks chichi would like this one!",
-    "This bundle smells like peanuts and fun. 🥜",
-    "Hehe~ haha would smash if no one buys this one!",
-    "New games = more friends = world peace!",
-    "Anya read minds and this one looked good!",
-    "Waku waku~! Another bundle spotted!",
-    "This one... has Anya vibes~",
-    "Heh! Anya is best bundle spy!",
-    "Spy report complete! Bundle delivered.",
-    "Your mission is to click this bundle! 🕵️",
-    "Chichi would approve this deal!",
-    "For the mission... for the fun... for the peanuts~",
-    "Ooooooh! Shiny bundle!",
-    "Hehe~ Anya pressed the button. Good button.",
-    "Waku waku~! Anya did something useful!",
-    "Twilight would say this is 'efficient'!",
-    "Bond says this bundle has good vibes.",
-    "Anya detected value... 10/10 mission success!",
-    "More games = less homework, right? 😈",
-    "Waku waku~! Buy this or face peanut wrath!",
-    "Shhh... secret bundle intel! 🤫",
-    "This deal made Anya's face go ⊙＿⊙",
-    "Why does bundle smell like... victory?",
-    "Hmm... yes. Very bundle. Very wow~",
-    "This deal smells like spy success 🕶️",
-    "Even Chimera-san approves this one~"
-]
-
-anya_statuses = [
-    "spying on game bundles 👀",
-    "thinking about peanuts and bundles 🥜",
-    "reporting bundle findings for world peace",
-    "waiting for new missions...",
-    "observing humans buy bundles",
-    "gathering bundle intel 🧠",
-    "tracking shiny discounts 💰",
-    "on peanut break (still watching) 🥜",
-    "dreaming of game world domination",
-    "plotting secret bundle heist 👧",
-    "sending chichi secret sales data",
-    "writing fake homework while spying...",
-    "Bond sees bundle future!",
-    "Waku waku mode: ENGAGED!",
-    "Analyzing bundle vibes~"
-]
-
-# --- Helper ---
-def is_bundle_post(entry):
-    title = entry.title.lower()
-    return any(keyword in title for keyword in ["bundle", "choice", "deal", "reveal", "collection"])
-
-# --- Commands ---
-@bot.command()
-async def latestbundle(ctx):
-    for feed_url, source in FEED_SOURCES:
+@bot.command
+@lightbulb.command('latestbundle', 'Get the latest bundle from Humble and Fanatical (last 7 days)')
+@lightbulb.implements(lightbulb.PrefixCommand)
+async def latestbundle(ctx: lightbulb.Context) -> None:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    threshold = now - datetime.timedelta(days=7)
+    latest_entries = []
+    for feed_url in (HUMBLE_RSS_URL, FANATICAL_RSS_URL):
         feed = feedparser.parse(feed_url)
-        if not feed.entries:
+        if not feed or not hasattr(feed, 'entries'):
             continue
         for entry in feed.entries:
-            if not is_bundle_post(entry):
+            entry_dt = _get_entry_datetime(entry)
+            if not entry_dt or entry_dt < threshold:
                 continue
-            embed = discord.Embed(
-                title=f"🎮 Latest {source} Bundle!",
-                description=entry.title,
-                url=entry.link,
-                color=discord.Color.orange() if "humble" in source.lower() else discord.Color.red(),
-                timestamp=datetime.now()
-            )
-            if hasattr(entry, 'summary'):
-                soup = BeautifulSoup(entry.summary, 'html.parser')
-                text_summary = soup.get_text()
-                summary = text_summary[:200] + '...' if len(text_summary) > 200 else text_summary
-                embed.add_field(name="📜 Summary", value=summary, inline=False)
-
-            if hasattr(entry, 'media_thumbnail'):
-                embed.set_image(url=entry.media_thumbnail[0]['url'])
-            elif hasattr(entry, 'media_content'):
-                embed.set_image(url=entry.media_content[0]['url'])
-
-            embed.set_footer(text=random.choice(anya_quotes))
-            await ctx.send(embed=embed)
-            return  # only post one
-    await ctx.send("No new bundles found waku waku~")
-
-# --- Feed Checker ---
-@tasks.loop(minutes=10)
-async def check_feeds():
-    channel = bot.get_channel(channel_id)
-    if channel is None:
-        print(f"Could not find channel with ID {channel_id}")
+            latest_entries.append(entry)
+            break  # Only take the newest entry from each feed
+    if not latest_entries:
+        await ctx.respond("No bundles found from the last 7 days.")
         return
+    for entry in latest_entries:
+        title = entry.title
+        link = entry.link
+        description = entry.get('summary', '') or entry.get('description', '')
+        embed = hikari.Embed(title=title, url=link, description=description)
+        image_url = None
+        if 'media_thumbnail' in entry:
+            image = entry.media_thumbnail
+            if isinstance(image, list) and image:
+                image_url = image[0].get('url')
+        elif 'media_content' in entry:
+            media = entry.media_content
+            if isinstance(media, list) and media:
+                image_url = media[0].get('url')
+        if not image_url and 'links' in entry:
+            for link_item in entry.links:
+                if link_item.get('rel') == 'enclosure' and link_item.get('type', '').startswith('image'):
+                    image_url = link_item.get('href')
+                    break
+        if image_url:
+            embed.set_thumbnail(image_url)
+        await ctx.respond(embed=embed)
 
-    for feed_url, source in FEED_SOURCES:
-        if feed_failures.get(feed_url, 0) >= MAX_FAILURES:
-            continue
-
-        try:
-            response = requests.get(feed_url, timeout=10)
-            if response.status_code != 200:
-                raise Exception(f"HTTP {response.status_code}")
-
-            feed = feedparser.parse(response.content)
-            if not feed.entries:
-                raise Exception("No entries in feed")
-
-            for entry in feed.entries:
-                if entry.title in posted_titles or not is_bundle_post(entry):
-                    continue
-
-                posted_titles.add(entry.title)
-
-                embed = discord.Embed(
-                    title=f"🎮 New {source} Bundle!",
-                    description=entry.title,
-                    url=entry.link,
-                    color=discord.Color.orange() if "humble" in source.lower() else discord.Color.red(),
-                    timestamp=datetime.now()
-                )
-
-                if hasattr(entry, 'summary'):
-                    soup = BeautifulSoup(entry.summary, 'html.parser')
-                    text_summary = soup.get_text()
-                    summary = text_summary[:200] + '...' if len(text_summary) > 200 else text_summary
-                    embed.add_field(name="📜 Summary", value=summary, inline=False)
-
-                if hasattr(entry, 'media_thumbnail'):
-                    embed.set_image(url=entry.media_thumbnail[0]['url'])
-                elif hasattr(entry, 'media_content'):
-                    embed.set_image(url=entry.media_content[0]['url'])
-
-                embed.set_footer(text=random.choice(anya_quotes))
-                await channel.send(embed=embed)
-
-            feed_failures[feed_url] = 0
-
-        except Exception as e:
-            print(f"❌ Failed to fetch {source}: {e}")
-            feed_failures[feed_url] = feed_failures.get(feed_url, 0) + 1
-
-# --- On Ready ---
-@bot.event
-async def on_ready():
-    print(f"✅ Anya is online as {bot.user}")
-    await bot.change_presence(activity=discord.Game(random.choice(anya_statuses)))
-    check_feeds.start()
-
-# --- Run Bot ---
-token = os.getenv('DISCORD_TOKEN')
-if token:
-    bot.run(token)
-else:
-    print("ERROR: DISCORD_TOKEN environment variable is missing!")
+if __name__ == "__main__":
+    bot.run()
