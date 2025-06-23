@@ -137,12 +137,44 @@ async def help(ctx):
         "!info": "Spy report about the bot",
         "!status": "Current mission status",
         "!help": "What Anya can do"
+        "!latestbundle": Shows latest bundle manually"
     }
     embed = discord.Embed(title="📋 Spy Commands", color=discord.Color.gold())
     for cmd, desc in commands_info.items():
         embed.add_field(name=cmd, value=desc, inline=False)
     embed.set_footer(text="Hehe~ Anya is a good bot.")
     await ctx.send(embed=embed)
+
+@bot.command()
+async def latestbundle(ctx):
+    """Posts the latest bundle from the monitored feeds"""
+    channel = ctx.channel
+    for feed_url, source in FEED_SOURCES:
+        feed = feedparser.parse(feed_url)
+        if not feed.entries:
+            continue
+        entry = feed.entries[0]  # latest entry
+        embed = discord.Embed(
+            title=f"🎮 Latest {source} Bundle!",
+            description=entry.title,
+            url=entry.link,
+            color=discord.Color.orange() if "humble" in source.lower() else discord.Color.red(),
+            timestamp=datetime.now()
+        )
+        if hasattr(entry, 'summary'):
+            summary = entry.summary[:200] + '...' if len(entry.summary) > 200 else entry.summary
+            embed.add_field(name="📝 Summary", value=summary, inline=False)
+
+        if 'media_thumbnail' in entry:
+            embed.set_image(url=entry.media_thumbnail[0]['url'])
+        elif 'media_content' in entry:
+            embed.set_image(url=entry.media_content[0]['url'])
+        elif 'image' in entry:
+            embed.set_image(url=entry.image.href)
+
+        embed.set_footer(text=random.choice(anya_quotes))
+        await channel.send(embed=embed)
+        break  # only post one latest bundle, stop after first feed with entries
 
 # --- Background Task ---
 @tasks.loop(minutes=10)
