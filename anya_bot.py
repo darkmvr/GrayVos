@@ -7,6 +7,7 @@ from datetime import datetime
 from flask import Flask
 import threading
 import random
+import requests
 
 # --- Flask keep-alive server ---
 app = Flask("")
@@ -28,8 +29,15 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 # --- Discord Bot Setup ---
-HUMBLE_RSS_URL = 'https://blog.humblebundle.com/rss/'
-FANATICAL_RSS_URL = 'https://blog.fanatical.com/en/feed/'
+FEED_SOURCES = [
+    ('https://blog.humblebundle.com/rss/', 'Humble Bundle'),
+    ('https://blog.fanatical.com/en/feed/', 'Fanatical'),
+    ('https://gg.deals/rss/', 'GG.deals'),
+    ('https://go-humble.com/feed/', 'Go-Humble')
+]
+
+feed_failures = {}
+MAX_FAILURES = 3
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -144,22 +152,31 @@ async def check_feeds():
         print(f"Could not find channel with ID {channel_id}")
         return
 
-    feeds = [
-        (HUMBLE_RSS_URL, "Humble Bundle"),
-        (FANATICAL_RSS_URL, "Fanatical")
-    ]
+    for feed_url, source in FEED_SOURCES:
+        if feed_failures.get(feed_url, 0) >= MAX_FAILURES:
+            print(f"Skipping {source} - too many failures.")
+            continue
 
-    for feed_url, source in feeds:
-        feed = feedparser.parse(feed_url)
-        for entry in feed.entries:
-            if entry.title not in posted_titles:
+        try:
+            response = requests.get(feed_url, timeout=10)
+            if response.status_code != 200:
+                raise Exception(f"HTTP {response.status_code}")
+
+            feed = feedparser.parse(response.content)
+
+            if not feed.entries:
+                raise Exception("No entries in feed")
+
+            for entry in feed.entries:
+                if entry.title in posted_titles:
+                    continue
                 posted_titles.add(entry.title)
 
                 embed = discord.Embed(
                     title=f"🎮 New {source} Bundle!",
                     description=entry.title,
                     url=entry.link,
-                    color=discord.Color.orange() if source == "Humble Bundle" else discord.Color.red(),
+                    color=discord.Color.orange() if "humble" in source.lower() else discord.Color.red(),
                     timestamp=datetime.now()
                 )
 
@@ -176,6 +193,12 @@ async def check_feeds():
 
                 embed.set_footer(text=random.choice(anya_quotes))
                 await channel.send(embed=embed)
+
+            feed_failures[feed_url] = 0  # reset failure count if successful
+
+        except Exception as e:
+            print(f"❌ Failed to fetch {source}: {e}")
+            feed_failures[feed_url] = feed_failures.get(feed_url, 0) + 1
 
 # --- On Ready Event ---
 @bot.event
