@@ -136,8 +136,8 @@ async def help(ctx):
         "!uptime": "See how long Anya has been working",
         "!info": "Spy report about the bot",
         "!status": "Current mission status",
-        "!help": "What Anya can do"
-        "!latestbundle": Shows latest bundle manually"
+        "!help": "What Anya can do",
+        "!latestbundle": "Shows latest bundle manually"
     }
     embed = discord.Embed(title="📋 Spy Commands", color=discord.Color.gold())
     for cmd, desc in commands_info.items():
