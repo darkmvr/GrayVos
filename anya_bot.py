@@ -2,13 +2,13 @@ import discord
 from discord.ext import commands, tasks
 import feedparser
 from bs4 import BeautifulSoup
-import requests
 import asyncio
 import os
 from datetime import datetime
 from flask import Flask
 import threading
 import random
+import requests
 
 # --- Flask keep-alive server ---
 app = Flask("")
@@ -37,7 +37,6 @@ FEED_SOURCES = [
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
-
 posted_titles = set()
 channel_id = int(os.getenv('CHANNEL_ID'))
 start_time = datetime.now()
@@ -78,6 +77,17 @@ def get_thumbnail(entry):
     img = soup.find('img')
     return img['src'] if img else None
 
+def extract_direct_bundle_link(post_url):
+    try:
+        res = requests.get(post_url, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        btn = soup.find('a', href=True, string=lambda s: s and ("bundle" in s.lower() or "store" in s.lower()))
+        if btn:
+            return btn['href']
+    except Exception as e:
+        print(f"[extract_direct_bundle_link error] {e}")
+    return post_url
+
 @bot.event
 async def on_ready():
     print(f"✅ Anya connected as {bot.user}")
@@ -98,31 +108,26 @@ async def check_feeds():
                 if entry.title in posted_titles or not is_valid_bundle(entry):
                     continue
                 posted_titles.add(entry.title)
-                soup = BeautifulSoup(entry.get('summary', ''), 'html.parser')
-                a = soup.find('a', href=True)
-                bundle_link = a['href'] if a else entry.link
 
                 embed = discord.Embed(
                     title=f"🎮 {entry.title}",
-                    url=bundle_link,
+                    url=extract_direct_bundle_link(entry.link),
                     color=discord.Color.orange() if 'humble' in source.lower() else discord.Color.red(),
                     timestamp=datetime.now()
                 )
-                summary = soup.get_text().strip()
-                embed.add_field(name="📜 Summary", value=summary[:200] + '...' if len(summary) > 200 else summary, inline=False)
+                summary = BeautifulSoup(entry.summary, 'html.parser').get_text()
+                embed.add_field(name="📝 Summary", value=summary[:200] + '...' if len(summary) > 200 else summary, inline=False)
 
                 thumb = get_thumbnail(entry)
                 if thumb:
                     embed.set_image(url=thumb)
 
-                embed.add_field(name="🔗 Blog Post", value=f"[More details]({entry.link})", inline=False)
                 embed.set_footer(text=random.choice(anya_quotes))
                 await channel.send(embed=embed)
                 break
         except Exception as e:
             print(f"❌ Error with {source}: {e}")
 
-# --- Commands ---
 @bot.command()
 async def ping(ctx):
     await ctx.send(f"🏓 Anya brain ping: {round(bot.latency * 1000)}ms")
@@ -134,35 +139,42 @@ async def uptime(ctx):
 
 @bot.command()
 async def latestbundle(ctx):
-    for feed_url, source in FEED_SOURCES:
-        feed = feedparser.parse(requests.get(feed_url).content)
-        for entry in feed.entries:
-            if not is_valid_bundle(entry):
+    try:
+        found = False
+        for feed_url, source in FEED_SOURCES:
+            response = requests.get(feed_url, timeout=10)
+            feed = feedparser.parse(response.content)
+
+            if not feed.entries:
+                await ctx.send(f"⚠️ Anya couldn't find entries from {source}.")
                 continue
 
-            soup = BeautifulSoup(entry.get('summary', ''), 'html.parser')
-            a = soup.find('a', href=True)
-            bundle_link = a['href'] if a else entry.link
+            for entry in feed.entries:
+                if is_valid_bundle(entry):
+                    found = True
+                    direct_link = extract_direct_bundle_link(entry.link)
 
-            embed = discord.Embed(
-                title=f"🎮 {entry.title}",
-                url=bundle_link,
-                color=discord.Color.orange() if 'humble' in source.lower() else discord.Color.red(),
-                timestamp=datetime.now()
-            )
-            summary = soup.get_text().strip()
-            embed.add_field(name="📜 Summary", value=summary[:200] + '...' if len(summary) > 200 else summary, inline=False)
+                    embed = discord.Embed(
+                        title=f"🎮 {entry.title}",
+                        url=direct_link,
+                        color=discord.Color.orange() if 'humble' in source.lower() else discord.Color.red(),
+                        timestamp=datetime.now()
+                    )
+                    summary = BeautifulSoup(entry.summary, 'html.parser').get_text()
+                    embed.add_field(name="📝 Summary", value=summary[:200] + '...' if len(summary) > 200 else summary, inline=False)
 
-            thumb = get_thumbnail(entry)
-            if thumb:
-                embed.set_image(url=thumb)
+                    thumb = get_thumbnail(entry)
+                    if thumb:
+                        embed.set_image(url=thumb)
 
-            embed.add_field(name="🔗 Blog Post", value=f"[More details]({entry.link})", inline=False)
-            embed.set_footer(text=random.choice(anya_quotes))
-            await ctx.send(embed=embed)
-            return
-
-    await ctx.send("Anya sees no new bundles right now~")
+                    embed.set_footer(text=random.choice(anya_quotes))
+                    await ctx.send(embed=embed)
+                    return
+        if not found:
+            await ctx.send("🔍 Anya sees no new bundles right now~")
+    except Exception as e:
+        print(f"[ERROR in !latestbundle] {e}")
+        await ctx.send("💥 Anya had a spy mission failure fetching the bundle!")
 
 @bot.command()
 async def status(ctx):
