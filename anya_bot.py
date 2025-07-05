@@ -1,16 +1,15 @@
 import discord
 from discord.ext import commands, tasks
 import feedparser
-import asyncio
+import requests
 import os
 import random
-import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 from flask import Flask
 import threading
-from bs4 import BeautifulSoup
 
-# --- Flask keep-alive server ---
+# --- Flask keep-alive ---
 app = Flask("")
 
 @app.route("/")
@@ -18,7 +17,9 @@ def home():
     return random.choice([
         "Anya is alive and spying on bundles!",
         "Mission report: Anya still active.",
-        "Bundle intel secure. Anya online! 🕵️‍♀️"
+        "Bundle intel secure. Anya online!",
+        "Waku waku~! Anya is watching RSS feeds!",
+        "Anya is doing important spy work rn~ 🕵️‍♀️"
     ]), 200
 
 def run_flask():
@@ -26,150 +27,149 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# --- Discord Bot Setup ---
+# --- Discord bot ---
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+
 FEED_SOURCES = [
     ('https://blog.humblebundle.com/rss/', 'Humble Bundle'),
     ('https://blog.fanatical.com/en/feed/', 'Fanatical'),
 ]
 
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 posted_titles = set()
-start_time = datetime.now()
 channel_id = int(os.getenv('CHANNEL_ID'))
 
 anya_quotes = [
     "Anya found this bundle! Waku waku~~! 🥜",
     "Anya spy mission: deliver new games. Success! 👀",
+    "Oooh, Anya thinks you might like this one!",
+    "This bundle smells like peanuts and fun. 🥜",
     "Hehe~ chichi would buy this for sure.",
     "New games = more friends = world peace!",
+    "Anya read minds and this one looked good!",
     "Waku waku~! Another bundle spotted!",
     "This one... has Anya vibes~",
     "Heh! Anya is best bundle spy!",
+    "Spy report complete! Bundle delivered.",
     "Your mission is to click this bundle! 🕵️",
-    "Chichi would approve this deal!",
+    "chichi would approve this deal!",
     "For the mission... for the fun... for the peanuts~",
+    "Ooooooh! Shiny bundle!",
+    "Hehe~ Anya pressed the button. Good button.",
+    "Waku waku~! Anya did something useful!",
+    "Hah! Anya's spy senses were tingling!",
+    "Twilight would say this is 'efficient'!",
+    "Bond says this bundle has good vibes.",
+    "haha would smash if no one buys this one!",
+    "Anya detected value... 10/10 mission success!",
+    "More games = less homework, right? 😈",
     "Waku waku~! Buy this or face peanut wrath!",
-    "Haha would smash if no one buys this one!",
-    "Chichi says this deal is mission critical!",
-    "Even Bond sees good vibes in this bundle~",
-    "Loid doesn’t know I posted this hehe~",
+    "Shhh... secret bundle intel! 🤫",
     "Waku waku overload! This bundle is top tier~",
-    "No lie detector needed—this bundle is good!"
+    "This deal made Anya's face go ⊙﹏⊙",
+    "chichi doesn't know I posted this hehe~",
+    "Why does bundle smell like... victory?",
+    "Bundle detected! Waku waku alert~",
+    "Hmm... yes. Very bundle. Very wow~",
+    "This deal smells like spy success 🕶️",
+    "No lie detector needed—this bundle is good!",
+    "Even Chimera-san approves this one~"
 ]
-
-@bot.command()
-async def latestbundle(ctx):
-    """Manually post the latest bundle from feeds"""
-    channel = ctx.channel
-    for feed_url, source in FEED_SOURCES:
-        try:
-            feed = feedparser.parse(feed_url)
-            if not feed.entries:
-                continue
-
-            for entry in feed.entries:
-                if entry.title in posted_titles:
-                    continue
-
-                # Filter Humble: must have '/bundle/' in link
-                if "humble" in source.lower():
-                    if "/bundle/" not in entry.link:
-                        continue
-
-                # Filter Fanatical: must have '/bundle/' in entry link
-                if "fanatical" in source.lower():
-                    if "/bundle/" not in entry.link:
-                        continue
-
-                posted_titles.add(entry.title)
-                embed = await create_bundle_embed(entry, source)
-                await channel.send(embed=embed)
-                return
-
-            await ctx.send("Anya sees no new bundles right now~")
-        except Exception as e:
-            await ctx.send(f"Anya had a spy mission failure fetching the bundle: {e}")
-
-async def create_bundle_embed(entry, source):
-    embed = discord.Embed(
-        title=f"🎮 New {source} Bundle!",
-        description=entry.title,
-        url=entry.link,
-        color=discord.Color.orange() if "humble" in source.lower() else discord.Color.red(),
-        timestamp=datetime.now()
-    )
-
-    summary = entry.summary if hasattr(entry, 'summary') else ""
-    soup = BeautifulSoup(summary, "html.parser")
-    text_summary = soup.get_text()[:200] + '...' if len(soup.get_text()) > 200 else soup.get_text()
-    if text_summary.strip():
-        embed.add_field(name="📝 Summary", value=text_summary, inline=False)
-
-    thumb_url = None
-
-    # Try media fields
-    if 'media_thumbnail' in entry:
-        thumb_url = entry.media_thumbnail[0]['url']
-    elif 'media_content' in entry:
-        thumb_url = entry.media_content[0]['url']
-
-    # Fallback: grab first image from summary HTML
-    if not thumb_url:
-        img = soup.find("img")
-        if img and img.get("src"):
-            thumb_url = img["src"]
-
-    if thumb_url:
-        embed.set_image(url=thumb_url)
-
-    embed.set_footer(text=random.choice(anya_quotes))
-    return embed
-
-@tasks.loop(minutes=10)
-async def check_feeds():
-    channel = bot.get_channel(channel_id)
-    if channel is None:
-        print(f"Could not find channel with ID {channel_id}")
-        return
-
-    for feed_url, source in FEED_SOURCES:
-        try:
-            feed = feedparser.parse(feed_url)
-            if not feed.entries:
-                continue
-
-            for entry in feed.entries:
-                if entry.title in posted_titles:
-                    continue
-
-                # Filter Humble: only posts with '/bundle/' in link
-                if "humble" in source.lower():
-                    if "/bundle/" not in entry.link:
-                        continue
-
-                # Filter Fanatical: only posts with '/bundle/' in link
-                if "fanatical" in source.lower():
-                    if "/bundle/" not in entry.link:
-                        continue
-
-                posted_titles.add(entry.title)
-                embed = await create_bundle_embed(entry, source)
-                await channel.send(embed=embed)
-                break
-
-        except Exception as e:
-            print(f"❌ Failed to fetch {source}: {e}")
 
 @bot.event
 async def on_ready():
     print(f"✅ Anya has connected as {bot.user}")
-    await bot.change_presence(activity=discord.Game("spying on bundles 👀"))
     check_feeds.start()
 
+@bot.command()
+async def latestbundle(ctx):
+    for feed_url, source in FEED_SOURCES:
+        feed = feedparser.parse(feed_url)
+        if not feed.entries:
+            continue
+        for entry in feed.entries:
+            if entry.title in posted_titles:
+                continue
+            if not looks_like_bundle(entry):
+                continue
+
+            posted_titles.add(entry.title)
+            embed = build_bundle_embed(entry, source)
+            await ctx.send(embed=embed)
+            return
+    await ctx.send("Anya sees no new bundles right now~")
+
+def looks_like_bundle(entry):
+    title = entry.title.lower()
+    if "bundle" in title or "choice" in title or "software" in title:
+        return True
+    return False
+
+def build_bundle_embed(entry, source):
+    embed = discord.Embed(
+        title=f"🎮 New {source} Bundle!",
+        description=entry.title,
+        url=entry.link,
+        color=discord.Color.orange(),
+        timestamp=datetime.now()
+    )
+
+    summary = get_summary(entry)
+    if summary:
+        embed.add_field(name="📝 Summary", value=summary, inline=False)
+
+    thumb = get_thumbnail(entry)
+    if thumb:
+        embed.set_image(url=thumb)
+
+    embed.set_footer(text=random.choice(anya_quotes))
+    return embed
+
+def get_summary(entry):
+    if hasattr(entry, 'summary'):
+        clean = BeautifulSoup(entry.summary, 'html.parser').get_text()
+        return clean[:200] + "..." if len(clean) > 200 else clean
+    return None
+
+def get_thumbnail(entry):
+    try:
+        resp = requests.get(entry.link, timeout=10)
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        img = soup.find("meta", property="og:image")
+        if img and img.get("content"):
+            return img["content"]
+    except Exception as e:
+        print(f"Thumbnail fetch failed: {e}")
+    return None
+
+@tasks.loop(minutes=10)
+async def check_feeds():
+    channel = bot.get_channel(channel_id)
+    if not channel:
+        print(f"Could not find channel with ID {channel_id}")
+        return
+
+    for feed_url, source in FEED_SOURCES:
+        feed = feedparser.parse(feed_url)
+        if not feed.entries:
+            continue
+        for entry in feed.entries:
+            if entry.title in posted_titles:
+                continue
+            if not looks_like_bundle(entry):
+                continue
+
+            posted_titles.add(entry.title)
+            embed = build_bundle_embed(entry, source)
+            await channel.send(embed=embed)
+            return
+
+# --- Run bot ---
 token = os.getenv('DISCORD_TOKEN')
 if not token:
-    print("ERROR: DISCORD_TOKEN environment variable is missing!")
+    print("Missing DISCORD_TOKEN!")
 else:
     bot.run(token)
