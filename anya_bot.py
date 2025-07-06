@@ -41,6 +41,7 @@ posted_titles = set()
 channel_id = int(os.getenv('CHANNEL_ID'))
 
 anya_quotes = [
+    # Your full list of quotes goes here — **unchanged**
     "Anya found this bundle! Waku waku~~! 🥜",
     "Anya spy mission: deliver new games. Success! 👀",
     "Oooh, Anya thinks you might like this one!",
@@ -95,7 +96,11 @@ async def latestbundle(ctx):
                 continue
 
             posted_titles.add(entry.title)
-            embed = build_bundle_embed(entry, source)
+
+            # Use extracted real bundle url here
+            real_link = extract_bundle_url(entry.link) or entry.link
+
+            embed = build_bundle_embed(entry, source, real_link)
             await ctx.send(embed=embed)
             return
     await ctx.send("Anya sees no new bundles right now~")
@@ -106,11 +111,11 @@ def looks_like_bundle(entry):
         return True
     return False
 
-def build_bundle_embed(entry, source):
+def build_bundle_embed(entry, source, url):
     embed = discord.Embed(
         title=f"🎮 New {source} Bundle!",
         description=entry.title,
-        url=entry.link,  # use feed entry URL directly, no change
+        url=url,
         color=discord.Color.orange(),
         timestamp=datetime.now()
     )
@@ -145,6 +150,36 @@ def get_thumbnail(entry):
         print(f"Thumbnail fetch failed: {e}")
     return None
 
+def extract_bundle_url(blog_url):
+    """
+    Scrape the blog post page at blog_url to find the actual bundle page URL.
+    Usually the bundle link is in an <a> tag or button somewhere in the blog post.
+    """
+
+    try:
+        resp = requests.get(blog_url, timeout=10)
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # Try common patterns to find the bundle page link
+        # 1. Check for buttons or links with href containing 'humblebundle.com' or 'fanatical.com'
+        # 2. Adjust as needed for other vendors
+        
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            if "humblebundle.com" in href or "fanatical.com" in href:
+                # Sometimes the blog link might have tracking or parameters
+                # You can clean it here if needed
+                return href
+
+        # If no link found, fallback None
+        return None
+
+    except Exception as e:
+        print(f"Error extracting bundle url: {e}")
+        return None
+
 @tasks.loop(minutes=10)
 async def check_feeds():
     channel = bot.get_channel(channel_id)
@@ -163,7 +198,9 @@ async def check_feeds():
                 continue
 
             posted_titles.add(entry.title)
-            embed = build_bundle_embed(entry, source)
+
+            real_link = extract_bundle_url(entry.link) or entry.link
+            embed = build_bundle_embed(entry, source, real_link)
             await channel.send(embed=embed)
             return
 
