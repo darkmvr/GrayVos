@@ -106,11 +106,30 @@ def looks_like_bundle(entry):
         return True
     return False
 
+def get_real_bundle_url(blog_url):
+    try:
+        resp = requests.get(blog_url, timeout=10)
+        if resp.status_code != 200:
+            return blog_url  # fallback to original link if fetch fails
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Look for a direct link to humblebundle.com inside the blog post content
+        link = soup.find("a", href=lambda href: href and "humblebundle.com" in href and not href.startswith("https://blog.humblebundle.com"))
+        if link and link.get("href"):
+            return link["href"]
+    except Exception as e:
+        print(f"Failed to get real bundle url: {e}")
+    return blog_url
+
 def build_bundle_embed(entry, source):
+    real_url = entry.link
+    if source == 'Humble Bundle' and 'blog.humblebundle.com' in entry.link:
+        real_url = get_real_bundle_url(entry.link)
+    
     embed = discord.Embed(
         title=f"🎮 New {source} Bundle!",
         description=entry.title,
-        url=entry.link,
+        url=real_url,
         color=discord.Color.orange(),
         timestamp=datetime.now()
     )
