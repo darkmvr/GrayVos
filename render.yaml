@@ -1,8 +1,5 @@
 services:
   - type: web
-    name: your-service-name
+    name: Anya
     env: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: python your_start_script.py
     pythonVersion: "3.12.13"
