@@ -1,10 +1,8 @@
 import discord
 from discord.ext import commands, tasks
-import feedparser
 import requests
 import os
 import random
-from bs4 import BeautifulSoup
 from datetime import datetime
 from flask import Flask
 import threading
@@ -18,7 +16,7 @@ def home():
         "Anya is alive and spying on bundles!",
         "Mission report: Anya still active.",
         "Bundle intel secure. Anya online!",
-        "Waku waku~! Anya is watching RSS feeds!",
+        "Waku waku~! Anya is watching deals!",
         "Anya is doing important spy work rn~ 🕵️‍♀️"
     ]), 200
 
@@ -32,15 +30,15 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-FEED_SOURCES = [
-    ('https://blog.humblebundle.com/rss/', 'Humble Bundle'),
-    ('https://blog.fanatical.com/en/feed/', 'Fanatical'),
-]
+# Your IsThereAnyDeal API key
+ITAD_API_KEY = os.getenv('ITAD_API_KEY')
 
-posted_titles = set()
+# Keep track of posted bundle IDs
+posted_bundle_ids = set()
 channel_id = int(os.getenv('CHANNEL_ID'))
 
 anya_quotes = [
+    # Your existing quotes here, keep as-is!
     "Anya found this bundle! Waku waku~~! 🥜",
     "Anya spy mission: deliver new games. Success! 👀",
     "Oooh, Anya thinks you might like this one!",
@@ -77,94 +75,92 @@ anya_quotes = [
     "Even Chimera-san approves this one~"
 ]
 
-@bot.event
-async def on_ready():
-    print(f"✅ Anya has connected as {bot.user}")
-    check_feeds.start()
+def fetch_bundles():
+    """
+    Calls IsThereAnyDeal API to fetch current active bundles from Humble and Fanatical stores.
+    Returns a list of bundles (dicts with info).
+    """
+    url = "https://api.isthereanydeal.com/v01/deals/bundles/"
+    params = {
+        'key': ITAD_API_KEY,
+        'region': 'us',
+        'country': 'US',
+        'limit': 10,
+        'store': 'humble,fanatical',  # comma-separated list of stores to filter
+        'sort': 'added',  # newest first
+        'hideinactive': 1,
+        'bundlestate': 'active'
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if 'data' in data and 'bundles' in data['data']:
+            return data['data']['bundles']
+    except Exception as e:
+        print(f"Failed to fetch bundles from ITAD: {e}")
+    return []
 
-@bot.command()
-async def latestbundle(ctx):
-    for feed_url, source in FEED_SOURCES:
-        feed = feedparser.parse(feed_url)
-        if not feed.entries:
-            continue
-        for entry in feed.entries:
-            if entry.title in posted_titles:
-                continue
-            if not looks_like_bundle(entry):
-                continue
+def build_bundle_embed(bundle):
+    """
+    Builds a Discord embed for a bundle dictionary from ITAD API.
+    """
+    title = bundle.get('title', 'Unknown Bundle')
+    url = bundle.get('url', '')
+    thumb = bundle.get('image', None)
+    added_ts = bundle.get('added', None)
+    timestamp = datetime.fromtimestamp(added_ts) if added_ts else datetime.now()
 
-            posted_titles.add(entry.title)
-            embed = build_bundle_embed(entry, source)
-            await ctx.send(embed=embed)
-            return
-    await ctx.send("Anya sees no new bundles right now~")
-
-def looks_like_bundle(entry):
-    keywords = ["bundle", "choice", "software"]
-    text_to_check = (entry.title + " " + getattr(entry, "summary", "")).lower()
-    return any(keyword in text_to_check for keyword in keywords)
-
-def build_bundle_embed(entry, source):
     embed = discord.Embed(
-        title=f"🎮 New {source} Bundle!",
-        description=entry.title,
-        url=entry.link,
+        title=f"🎮 New Bundle: {title}",
+        url=url,
         color=discord.Color.orange(),
-        timestamp=datetime.now()
+        timestamp=timestamp
     )
-
-    summary = get_summary(entry)
-    if summary:
-        embed.add_field(name="📝 Summary", value=summary, inline=False)
-
-    thumb = get_thumbnail(entry)
     if thumb:
-        embed.set_image(url=thumb)
-
+        embed.set_thumbnail(url=thumb)
     embed.set_footer(text=random.choice(anya_quotes))
     return embed
 
-def get_summary(entry):
-    if hasattr(entry, 'summary'):
-        clean = BeautifulSoup(entry.summary, 'html.parser').get_text()
-        return clean[:200] + "..." if len(clean) > 200 else clean
-    return None
-
-def get_thumbnail(entry):
-    try:
-        resp = requests.get(entry.link, timeout=10)
-        if resp.status_code != 200:
-            return None
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        img = soup.find("meta", property="og:image")
-        if img and img.get("content"):
-            return img["content"]
-    except Exception as e:
-        print(f"Thumbnail fetch failed: {e}")
-    return None
-
 @tasks.loop(minutes=10)
-async def check_feeds():
+async def check_itad_bundles():
     channel = bot.get_channel(channel_id)
     if not channel:
         print(f"Could not find channel with ID {channel_id}")
         return
 
-    for feed_url, source in FEED_SOURCES:
-        feed = feedparser.parse(feed_url)
-        if not feed.entries:
-            continue
-        for entry in feed.entries:
-            if entry.title in posted_titles:
-                continue
-            if not looks_like_bundle(entry):
-                continue
+    bundles = fetch_bundles()
+    if not bundles:
+        print("No bundles found from ITAD.")
+        return
 
-            posted_titles.add(entry.title)
-            embed = build_bundle_embed(entry, source)
-            await channel.send(embed=embed)
-            return
+    for bundle in bundles:
+        bundle_id = bundle.get('id')
+        if not bundle_id or bundle_id in posted_bundle_ids:
+            continue
+
+        posted_bundle_ids.add(bundle_id)
+        embed = build_bundle_embed(bundle)
+        await channel.send(embed=embed)
+        # Only send one bundle per check to avoid spamming
+        return
+
+@bot.event
+async def on_ready():
+    print(f"✅ Anya has connected as {bot.user}")
+    check_itad_bundles.start()
+
+@bot.command()
+async def latestbundle(ctx):
+    bundles = fetch_bundles()
+    for bundle in bundles:
+        if bundle.get('id') in posted_bundle_ids:
+            continue
+        posted_bundle_ids.add(bundle.get('id'))
+        embed = build_bundle_embed(bundle)
+        await ctx.send(embed=embed)
+        return
+    await ctx.send("Anya sees no new bundles right now~")
 
 # --- Run bot ---
 token = os.getenv('DISCORD_TOKEN')
