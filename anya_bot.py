@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from flask import Flask
 import threading
+import asyncio
+import yt_dlp
 
 # --- Flask keep-alive ---
 app = Flask("")
@@ -77,12 +79,42 @@ anya_quotes = [
     "Even Chimera-san approves this one~"
 ]
 
+anya_music_quotes = [
+    "Waku waku~! Music makes Anya brain go brrr~ 🎶",
+    "Anya likes this song! Peanut rhythm detected! 🥜",
+    "Hehe~ chichi would tap foot to this one!",
+    "This song is VERY spy approved 🕵️‍♀️🎧",
+    "Anya feels smart listening to this music!",
+    "Music makes mission easier! Probably!",
+    "Waku waku~! This song has main character energy!",
+    "Anya dance time! Nobody look! 💃",
+    "Even Bond is vibing right now 🐶🎶",
+    "This song makes Anya feel like secret agent!",
+    "Hehe~ Anya pressed play. Good button.",
+    "Anya thinks this song is cool. Very cool.",
+    "Spy HQ background music activated 🎧",
+    "This music makes peanuts taste better 🥜✨",
+    "Anya heard this in chichi’s head!",
+    "Waku waku overload! Volume in heart increased!",
+    "This song = +10 spy power!",
+    "Anya would save this to playlist if Anya had one!",
+    "Music so good even lie detector says TRUE!",
+    "Anya approves this vibe! 👍",
+    "This song smells like adventure!",
+    "Hehe~ Anya nodding head like grown-up!",
+    "Anya calls this… a bop.",
+    "Mission update: vibes are excellent!",
+    "If this song was homework, Anya would do it!"
+]
+
+# --- Events ---
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.Game("spying on game deals 👀"))
     print(f"✅ Anya has connected as {bot.user}")
     check_feeds.start()
 
+# --- RSS feed commands ---
 @bot.command()
 async def latestbundle(ctx):
     found = await post_all_bundles(ctx.send)
@@ -198,45 +230,7 @@ def fetch_gg_deals_bundles():
         print(f"Failed to fetch GG.deals: {e}")
         return []
 
-# --- Run bot ---
-token = os.getenv('DISCORD_TOKEN')
-if not token:
-    print("Missing DISCORD_TOKEN!")
-else:
-    bot.run(token)
-
-import asyncio
-import yt_dlp
-
-# --- Music quotes for Anya ---
-anya_music_quotes = [
-    "Waku waku~! Music makes Anya brain go brrr~ 🎶",
-    "Anya likes this song! Peanut rhythm detected! 🥜",
-    "Hehe~ chichi would tap foot to this one!",
-    "This song is VERY spy approved 🕵️‍♀️🎧",
-    "Anya feels smart listening to this music!",
-    "Music makes mission easier! Probably!",
-    "Waku waku~! This song has main character energy!",
-    "Anya dance time! Nobody look! 💃",
-    "Even Bond is vibing right now 🐶🎶",
-    "This song makes Anya feel like secret agent!",
-    "Hehe~ Anya pressed play. Good button.",
-    "Anya thinks this song is cool. Very cool.",
-    "Spy HQ background music activated 🎧",
-    "This music makes peanuts taste better 🥜✨",
-    "Anya heard this in chichi’s head!",
-    "Waku waku overload! Volume in heart increased!",
-    "This song = +10 spy power!",
-    "Anya would save this to playlist if Anya had one!",
-    "Music so good even lie detector says TRUE!",
-    "Anya approves this vibe! 👍",
-    "This song smells like adventure!",
-    "Hehe~ Anya nodding head like grown-up!",
-    "Anya calls this… a bop.",
-    "Mission update: vibes are excellent!",
-    "If this song was homework, Anya would do it!"
-]
-
+# --- Anya voice/music/watch commands ---
 @bot.command(name="anya")
 async def anya_voice(ctx, mode: str = None, *, query: str = None):
     """
@@ -244,15 +238,24 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
     !anya play <url/search> -> play audio
     !anya stop -> stop audio
     """
-
     if not ctx.author.voice or not ctx.author.voice.channel:
         await ctx.send("Anya says: join voice first! 😤")
         return
 
     voice_channel = ctx.author.voice.channel
 
+    # ❓ Show help if no mode
+    if mode is None:
+        await ctx.send(
+            "**Anya voice commands:**\n"
+            "`!anya watch` → YouTube Watch Together 📺\n"
+            "`!anya play <song>` → play music 🎵\n"
+            "`!anya stop` → stop music ⛔"
+        )
+        return
+
     # 📺 WATCH TOGETHER
-    if mode == "watch":
+    if mode.lower() == "watch":
         invite = await voice_channel.create_invite(
             target_application_id=880218394199220334,  # YouTube Watch Together
             target_type=2,
@@ -262,7 +265,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         return
 
     # 🎵 PLAY MUSIC
-    if mode == "play":
+    if mode.lower() == "play":
         if not query:
             await ctx.send("Anya needs a song to play! 😠")
             return
@@ -291,7 +294,6 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             after=lambda e: print(f"Audio ended: {e}")
         )
 
-        # Send the song + a random music quote
         await ctx.send(
             f"🎶 **Anya plays:** {title} ♪\n"
             f"{random.choice(anya_music_quotes)}"
@@ -299,7 +301,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         return
 
     # ⛔ STOP
-    if mode == "stop":
+    if mode.lower() == "stop":
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
             await ctx.send(random.choice([
@@ -313,11 +315,44 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             await ctx.send("Anya wasn't playing anything~")
         return
 
-    # ❓ HELP
+    # ❌ Unknown mode
     await ctx.send(
-        "**Anya voice commands:**\n"
-        "`!anya watch` → YouTube Watch Together 📺\n"
-        "`!anya play <song>` → play music 🎵\n"
-        "`!anya stop` → stop music ⛔"
+        f"Unknown mode `{mode}`. Type `!anya` to see available commands."
     )
 
+# --- NEW: Join/Leave commands ---
+@bot.command(name="anyajoin")
+async def anya_join(ctx):
+    """Make Anya join your current voice channel."""
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.send("Anya says: you need to be in a voice channel first! 😤")
+        return
+
+    voice_channel = ctx.author.voice.channel
+    if ctx.voice_client is not None:
+        if ctx.voice_client.channel == voice_channel:
+            await ctx.send("Anya is already in your voice channel! 😎")
+            return
+        else:
+            await ctx.voice_client.move_to(voice_channel)
+            await ctx.send(f"Anya moves to {voice_channel.name} 🕵️‍♀️")
+            return
+    else:
+        await voice_channel.connect()
+        await ctx.send(f"Anya joins {voice_channel.name}! 🎶")
+
+@bot.command(name="anyaleave")
+async def anya_leave(ctx):
+    """Make Anya leave the current voice channel."""
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        await ctx.send("Anya leaves the voice channel. Bye bye~ 👋")
+    else:
+        await ctx.send("Anya isn't in any voice channel right now~ 😢")
+
+# --- Run bot ---
+token = os.getenv('DISCORD_TOKEN')
+if not token:
+    print("Missing DISCORD_TOKEN!")
+else:
+    bot.run(token)
