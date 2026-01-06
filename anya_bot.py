@@ -204,3 +204,120 @@ if not token:
     print("Missing DISCORD_TOKEN!")
 else:
     bot.run(token)
+
+import asyncio
+import yt_dlp
+
+# --- Music quotes for Anya ---
+anya_music_quotes = [
+    "Waku waku~! Music makes Anya brain go brrr~ 🎶",
+    "Anya likes this song! Peanut rhythm detected! 🥜",
+    "Hehe~ chichi would tap foot to this one!",
+    "This song is VERY spy approved 🕵️‍♀️🎧",
+    "Anya feels smart listening to this music!",
+    "Music makes mission easier! Probably!",
+    "Waku waku~! This song has main character energy!",
+    "Anya dance time! Nobody look! 💃",
+    "Even Bond is vibing right now 🐶🎶",
+    "This song makes Anya feel like secret agent!",
+    "Hehe~ Anya pressed play. Good button.",
+    "Anya thinks this song is cool. Very cool.",
+    "Spy HQ background music activated 🎧",
+    "This music makes peanuts taste better 🥜✨",
+    "Anya heard this in chichi’s head!",
+    "Waku waku overload! Volume in heart increased!",
+    "This song = +10 spy power!",
+    "Anya would save this to playlist if Anya had one!",
+    "Music so good even lie detector says TRUE!",
+    "Anya approves this vibe! 👍",
+    "This song smells like adventure!",
+    "Hehe~ Anya nodding head like grown-up!",
+    "Anya calls this… a bop.",
+    "Mission update: vibes are excellent!",
+    "If this song was homework, Anya would do it!"
+]
+
+@bot.command(name="anya")
+async def anya_voice(ctx, mode: str = None, *, query: str = None):
+    """
+    !anya watch  -> YouTube Watch Together
+    !anya play <url/search> -> play audio
+    !anya stop -> stop audio
+    """
+
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.send("Anya says: join voice first! 😤")
+        return
+
+    voice_channel = ctx.author.voice.channel
+
+    # 📺 WATCH TOGETHER
+    if mode == "watch":
+        invite = await voice_channel.create_invite(
+            target_application_id=880218394199220334,  # YouTube Watch Together
+            target_type=2,
+            max_age=0
+        )
+        await ctx.send(f"📺 **Anya starts YouTube time!**\n👉 {invite.url}")
+        return
+
+    # 🎵 PLAY MUSIC
+    if mode == "play":
+        if not query:
+            await ctx.send("Anya needs a song to play! 😠")
+            return
+
+        if ctx.voice_client is None:
+            vc = await voice_channel.connect()
+        else:
+            vc = ctx.voice_client
+
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "quiet": True,
+            "default_search": "ytsearch",
+            "noplaylist": True
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+            if "entries" in info:
+                info = info["entries"][0]
+            url = info["url"]
+            title = info.get("title", "Unknown")
+
+        vc.play(
+            discord.FFmpegPCMAudio(url),
+            after=lambda e: print(f"Audio ended: {e}")
+        )
+
+        # Send the song + a random music quote
+        await ctx.send(
+            f"🎶 **Anya plays:** {title} ♪\n"
+            f"{random.choice(anya_music_quotes)}"
+        )
+        return
+
+    # ⛔ STOP
+    if mode == "stop":
+        if ctx.voice_client:
+            await ctx.voice_client.disconnect()
+            await ctx.send(random.choice([
+                "🛑 Music stopped! Back to spy work 😌",
+                "Anya pressed stop. Mission paused.",
+                "No more music… Anya sad now 😔",
+                "Silence activated! Spy mode engaged!",
+                "Music nap time over!"
+            ]))
+        else:
+            await ctx.send("Anya wasn't playing anything~")
+        return
+
+    # ❓ HELP
+    await ctx.send(
+        "**Anya voice commands:**\n"
+        "`!anya watch` → YouTube Watch Together 📺\n"
+        "`!anya play <song>` → play music 🎵\n"
+        "`!anya stop` → stop music ⛔"
+    )
+
