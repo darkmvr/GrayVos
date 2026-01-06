@@ -14,3 +14,4 @@ sgmllib3k==1.0.0
 yarl==1.20.1
 beautifulsoup4
 flask
+yt_dlp
