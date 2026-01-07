@@ -1,14 +1,9 @@
 import discord
-from discord.ext import commands, tasks
-import feedparser
-import requests
+from discord.ext import commands
 import os
 import random
-from bs4 import BeautifulSoup
-from datetime import datetime
-from flask import Flask
 import threading
-import asyncio
+from flask import Flask
 import yt_dlp
 
 # --- Flask keep-alive ---
@@ -17,11 +12,9 @@ app = Flask("")
 @app.route("/")
 def home():
     return random.choice([
-        "Anya is alive and spying on bundles!",
-        "Mission report: Anya still active.",
-        "Bundle intel secure. Anya online!",
-        "Waku waku~! Anya is watching RSS feeds!",
-        "Anya is doing important spy work rn~ 🕵️‍♀️"
+        "Anya is alive and listening!",
+        "Mission report: Anya online.",
+        "Waku waku~! Anya is ready!",
     ]), 200
 
 def run_flask():
@@ -34,158 +27,29 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-FEED_SOURCES = [
-    ('https://blog.humblebundle.com/rss/', 'Humble Bundle'),
-    ('https://blog.fanatical.com/en/feed/', 'Fanatical'),
-]
-
-posted_titles = set()
-channel_id = int(os.getenv('CHANNEL_ID', 0))
-
-anya_quotes = [
-    # ... keep all your quotes here ...
-]
-
 anya_music_quotes = [
-    # ... keep all your music quotes here ...
+    "Waku waku~! Music makes Anya brain go brrr~ 🎶",
+    "Anya likes this song! Peanut rhythm detected! 🥜",
+    "This song is VERY spy approved 🕵️‍♀️🎧",
+    "Music makes mission easier! Probably!",
 ]
-
-# --- Read cookies from environment ---
-cookies_content = os.getenv("YOUTUBE_COOKIES")
-if cookies_content:
-    with open("cookies.txt", "w", encoding="utf-8") as f:
-        f.write(cookies_content)
 
 # --- Events ---
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Game("spying on game deals 👀"))
+    await bot.change_presence(activity=discord.Game("spying on music 👀"))
     print(f"✅ Anya has connected as {bot.user}")
-    check_feeds.start()
 
-# --- RSS feed commands ---
-@bot.command()
-async def latestbundle(ctx):
-    found = await post_all_bundles(ctx.send)
-    if not found:
-        await ctx.send("Anya sees no new bundles right now~")
-
-@tasks.loop(minutes=10)
-async def check_feeds():
-    channel = bot.get_channel(channel_id)
-    if not channel:
-        print(f"❌ Could not find channel with ID {channel_id}")
-        return
-    await post_all_bundles(channel.send)
-
-async def post_all_bundles(post_func):
-    found = False
-    for feed_url, source in FEED_SOURCES:
-        feed = feedparser.parse(feed_url)
-        for entry in feed.entries:
-            if entry.title in posted_titles:
-                continue
-            if not looks_like_bundle(entry):
-                continue
-            posted_titles.add(entry.title)
-            embed = build_bundle_embed(entry, source)
-            await post_func(embed=embed)
-            found = True
-
-    gg_bundles = fetch_gg_deals_bundles()
-    for bundle in gg_bundles:
-        if bundle["title"] in posted_titles:
-            continue
-        posted_titles.add(bundle["title"])
-        embed = discord.Embed(
-            title=f"🎮 New GG.deals Bundle!",
-            description=bundle["title"],
-            url=bundle["url"],
-            color=discord.Color.green(),
-            timestamp=datetime.now()
-        )
-        if bundle["thumb"]:
-            embed.set_image(url=bundle["thumb"])
-        embed.set_footer(text=random.choice(anya_quotes))
-        await post_func(embed=embed)
-        found = True
-    return found
-
-def looks_like_bundle(entry):
-    title = entry.title.lower()
-    summary = getattr(entry, 'summary', '').lower()
-    keywords = ["bundle", "choice", "software", "deal", "pack", "build your own"]
-    return any(kw in title or kw in summary for kw in keywords)
-
-def build_bundle_embed(entry, source):
-    embed = discord.Embed(
-        title=f"🎮 New {source} Bundle!",
-        description=entry.title,
-        url=entry.link,
-        color=discord.Color.orange(),
-        timestamp=datetime.now()
-    )
-    summary = get_summary(entry)
-    if summary:
-        embed.add_field(name="📝 Summary", value=summary, inline=False)
-    thumb = get_thumbnail(entry.link)
-    if thumb:
-        embed.set_image(url=thumb)
-    embed.set_footer(text=random.choice(anya_quotes))
-    return embed
-
-def get_summary(entry):
-    if hasattr(entry, 'summary'):
-        clean = BeautifulSoup(entry.summary, 'html.parser').get_text()
-        return clean[:200] + "..." if len(clean) > 200 else clean
-    return None
-
-def get_thumbnail(url):
-    try:
-        resp = requests.get(url, timeout=10)
-        if resp.status_code != 200:
-            return None
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        img = soup.find("meta", property="og:image")
-        if img and img.get("content"):
-            return img["content"]
-        fallback_img = soup.find("img")
-        if fallback_img and fallback_img.get("src"):
-            return fallback_img["src"]
-    except Exception as e:
-        print(f"Thumbnail fetch failed for {url}: {e}")
-    return None
-
-def fetch_gg_deals_bundles():
-    try:
-        resp = requests.get("https://gg.deals/news/bundles/", timeout=10)
-        if resp.status_code != 200:
-            return []
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        articles = soup.find_all("div", class_="news-title")
-        bundles = []
-        for article in articles:
-            a_tag = article.find("a")
-            if not a_tag:
-                continue
-            title = a_tag.text.strip()
-            url = "https://gg.deals" + a_tag['href']
-            thumb = get_thumbnail(url)
-            bundles.append({"title": title, "url": url, "thumb": thumb})
-        return bundles
-    except Exception as e:
-        print(f"Failed to fetch GG.deals: {e}")
-        return []
-
-# --- Anya voice/music/watch commands ---
+# --- Voice/music commands ---
 @bot.command(name="anya")
 async def anya_voice(ctx, mode: str = None, *, query: str = None):
     if not ctx.author.voice or not ctx.author.voice.channel:
-        await ctx.send("Anya says: join voice first! 😤")
+        await ctx.send("Join a voice channel first! 😤")
         return
 
     voice_channel = ctx.author.voice.channel
 
+    # Show help
     if mode is None:
         await ctx.send(
             "**Anya voice commands:**\n"
@@ -195,6 +59,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         )
         return
 
+    # Watch Together
     if mode.lower() == "watch":
         invite = await voice_channel.create_invite(
             target_application_id=880218394199220334,
@@ -204,6 +69,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         await ctx.send(f"📺 **Anya starts YouTube time!**\n👉 {invite.url}")
         return
 
+    # Play music
     if mode.lower() == "play":
         if not query:
             await ctx.send("Anya needs a song to play! 😠")
@@ -219,66 +85,46 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             "quiet": True,
             "default_search": "ytsearch",
             "noplaylist": True,
+            # Uncomment if using cookies
+            # "cookiefile": "cookies.txt"
         }
 
-        if cookies_content:
-            ydl_opts["cookiefile"] = "cookies.txt"
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+            if "entries" in info:
+                info = info["entries"][0]
+            url = info["url"]
+            title = info.get("title", "Unknown")
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(query, download=False)
-                if "entries" in info:
-                    info = info["entries"][0]
-                url = info["url"]
-                title = info.get("title", "Unknown")
+        vc.play(
+            discord.FFmpegPCMAudio(url),
+            after=lambda e: print(f"Audio ended: {e}")
+        )
 
-            vc.play(
-                discord.FFmpegPCMAudio(url),
-                after=lambda e: print(f"Audio ended: {e}")
-            )
-
-            await ctx.send(
-                f"🎶 **Anya plays:** {title} ♪\n"
-                f"{random.choice(anya_music_quotes)}"
-            )
-        except Exception as e:
-            await ctx.send(f"Anya failed to get this song: {e}")
+        await ctx.send(f"🎶 **Anya plays:** {title} ♪\n{random.choice(anya_music_quotes)}")
         return
 
+    # Stop music
     if mode.lower() == "stop":
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
-            await ctx.send(random.choice([
-                "🛑 Music stopped! Back to spy work 😌",
-                "Anya pressed stop. Mission paused.",
-                "No more music… Anya sad now 😔",
-                "Silence activated! Spy mode engaged!",
-                "Music nap time over!"
-            ]))
+            await ctx.send("🛑 Music stopped! Back to spy work 😌")
         else:
             await ctx.send("Anya wasn't playing anything~")
         return
 
-    await ctx.send(
-        f"Unknown mode `{mode}`. Type `!anya` to see available commands."
-    )
+    await ctx.send(f"Unknown mode `{mode}`. Type `!anya` for commands.")
 
 # --- Join/Leave commands ---
 @bot.command(name="anyajoin")
 async def anya_join(ctx):
     if not ctx.author.voice or not ctx.author.voice.channel:
-        await ctx.send("Anya says: you need to be in a voice channel first! 😤")
+        await ctx.send("You need to be in a voice channel! 😤")
         return
-
     voice_channel = ctx.author.voice.channel
-    if ctx.voice_client is not None:
-        if ctx.voice_client.channel == voice_channel:
-            await ctx.send("Anya is already in your voice channel! 😎")
-            return
-        else:
-            await ctx.voice_client.move_to(voice_channel)
-            await ctx.send(f"Anya moves to {voice_channel.name} 🕵️‍♀️")
-            return
+    if ctx.voice_client:
+        await ctx.voice_client.move_to(voice_channel)
+        await ctx.send(f"Anya moves to {voice_channel.name} 🕵️‍♀️")
     else:
         await voice_channel.connect()
         await ctx.send(f"Anya joins {voice_channel.name}! 🎶")
@@ -293,7 +139,7 @@ async def anya_leave(ctx):
 
 # --- Run bot ---
 token = os.getenv('DISCORD_TOKEN')
-if not token:
-    print("Missing DISCORD_TOKEN!")
-else:
+if token:
     bot.run(token)
+else:
+    print("Missing DISCORD_TOKEN!")
