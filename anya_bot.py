@@ -1,3 +1,9 @@
+try:
+    import nacl
+    print("✅ PyNaCl is installed")
+except ImportError:
+    print("❌ PyNaCl is NOT installed")
+
 import discord
 from discord.ext import commands, tasks
 import feedparser
