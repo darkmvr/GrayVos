@@ -3,7 +3,6 @@ from discord.ext import commands
 import os
 import random
 import yt_dlp
-import asyncio
 
 # --- Discord bot setup ---
 intents = discord.Intents.default()
@@ -32,7 +31,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
 
     voice_channel = ctx.author.voice.channel
 
-    # Help
+    # Help command
     if mode is None:
         await ctx.send(
             "**Anya voice commands:**\n"
@@ -58,17 +57,16 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             await ctx.send("Anya needs a song to play! 😠")
             return
 
-        # Connect to voice channel if not already
         vc = ctx.voice_client
         if vc is None:
             vc = await voice_channel.connect()
 
-        # YT-DLP options
+        # YT-DLP options to get best audio
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
             "default_search": "ytsearch",
-            "noplaylist": True,
+            "noplaylist": True
         }
 
         try:
@@ -77,8 +75,8 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
                 if "entries" in info:
                     info = info["entries"][0]
 
-                url = info["url"]
                 title = info.get("title", "Unknown")
+                url = info["url"]
         except Exception as e:
             await ctx.send(f"❌ Failed to get the song: {e}")
             return
@@ -87,7 +85,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         if vc.is_playing():
             vc.stop()
 
-        # Play safely using FFmpeg streaming
+        # FFmpeg streaming safely (deploy safe)
         ffmpeg_options = {
             "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
             "options": "-vn"
@@ -121,7 +119,6 @@ async def anya_join(ctx):
         return
 
     channel = ctx.author.voice.channel
-
     if ctx.voice_client:
         await ctx.voice_client.move_to(channel)
         await ctx.send(f"Anya moves to {channel.name} 🕵️‍♀️")
