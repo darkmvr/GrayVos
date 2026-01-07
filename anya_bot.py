@@ -3,6 +3,8 @@ from discord.ext import commands
 import os
 import random
 import yt_dlp
+import asyncio
+from discord import FFmpegPCMAudio
 
 # --- Discord bot setup ---
 intents = discord.Intents.default()
@@ -61,43 +63,38 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         if vc is None:
             vc = await voice_channel.connect()
 
-        # YT-DLP options to get best audio
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "quiet": True,
-            "default_search": "ytsearch",
-            "noplaylist": True
-        }
-
+        # Use yt-dlp to get direct audio stream
+        ydl_opts = {"format": "bestaudio/best", "quiet": True, "default_search": "ytsearch", "noplaylist": True}
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(query, download=False)
                 if "entries" in info:
                     info = info["entries"][0]
-
                 title = info.get("title", "Unknown")
                 url = info["url"]
         except Exception as e:
             await ctx.send(f"❌ Failed to get the song: {e}")
             return
 
-        # Stop currently playing audio
         if vc.is_playing():
             vc.stop()
 
-        # FFmpeg streaming safely (deploy safe)
-        ffmpeg_options = {
-            "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-            "options": "-vn"
-        }
-
-        audio_source = discord.FFmpegPCMAudio(url, **ffmpeg_options)
+        # --- DEPLOY-SAFE STREAMING ---
+        # FFmpeg reads from stdin instead of passing URL as argument
+        ffmpeg_command = [
+            "ffmpeg",
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5",
+            "-i", url,
+            "-vn",
+            "-f", "s16le",
+            "pipe:1"
+        ]
+        audio_source = FFmpegPCMAudio(executable="ffmpeg", source=url, pipe=True, options="-vn", before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5")
         vc.play(audio_source, after=lambda e: print(f"Audio ended: {e}"))
 
-        await ctx.send(
-            f"🎶 **Anya plays:** {title} ♪\n"
-            f"{random.choice(anya_music_quotes)}"
-        )
+        await ctx.send(f"🎶 **Anya plays:** {title} ♪\n{random.choice(anya_music_quotes)}")
         return
 
     # Stop music
