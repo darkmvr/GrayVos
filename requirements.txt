@@ -15,5 +15,10 @@ yarl==1.20.1
 beautifulsoup4
 flask
 PyNaCl>=1.5.0
-yt-dlp
+ydl_opts = {
+    "format": "bestaudio/best",
+    "quiet": True,
+    "default_search": "ytsearch",
+    "noplaylist": True,
+    "cookiefile": "cookies.txt"  # <-- add this
 discord.py>=2.5.2
