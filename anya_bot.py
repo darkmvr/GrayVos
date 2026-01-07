@@ -2,27 +2,9 @@ import discord
 from discord.ext import commands
 import os
 import random
-import threading
-from flask import Flask
 import yt_dlp
 
-# --- Flask keep-alive ---
-app = Flask("")
-
-@app.route("/")
-def home():
-    return random.choice([
-        "Anya is alive and listening!",
-        "Mission report: Anya online.",
-        "Waku waku~! Anya is ready!",
-    ]), 200
-
-def run_flask():
-    app.run(host="0.0.0.0", port=8080)
-
-threading.Thread(target=run_flask, daemon=True).start()
-
-# --- Discord bot ---
+# --- Discord bot setup ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
@@ -40,7 +22,7 @@ async def on_ready():
     await bot.change_presence(activity=discord.Game("spying on music 👀"))
     print(f"✅ Anya has connected as {bot.user}")
 
-# --- Voice/music commands ---
+# --- Main command ---
 @bot.command(name="anya")
 async def anya_voice(ctx, mode: str = None, *, query: str = None):
     if not ctx.author.voice or not ctx.author.voice.channel:
@@ -49,7 +31,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
 
     voice_channel = ctx.author.voice.channel
 
-    # Show help
+    # Help
     if mode is None:
         await ctx.send(
             "**Anya voice commands:**\n"
@@ -75,24 +57,22 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             await ctx.send("Anya needs a song to play! 😠")
             return
 
-        if ctx.voice_client is None:
+        vc = ctx.voice_client
+        if vc is None:
             vc = await voice_channel.connect()
-        else:
-            vc = ctx.voice_client
 
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
             "default_search": "ytsearch",
             "noplaylist": True,
-            # Uncomment if using cookies
-            # "cookiefile": "cookies.txt"
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
             if "entries" in info:
                 info = info["entries"][0]
+
             url = info["url"]
             title = info.get("title", "Unknown")
 
@@ -101,7 +81,10 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             after=lambda e: print(f"Audio ended: {e}")
         )
 
-        await ctx.send(f"🎶 **Anya plays:** {title} ♪\n{random.choice(anya_music_quotes)}")
+        await ctx.send(
+            f"🎶 **Anya plays:** {title} ♪\n"
+            f"{random.choice(anya_music_quotes)}"
+        )
         return
 
     # Stop music
@@ -115,19 +98,21 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
 
     await ctx.send(f"Unknown mode `{mode}`. Type `!anya` for commands.")
 
-# --- Join/Leave commands ---
+# --- Join / Leave commands ---
 @bot.command(name="anyajoin")
 async def anya_join(ctx):
     if not ctx.author.voice or not ctx.author.voice.channel:
         await ctx.send("You need to be in a voice channel! 😤")
         return
-    voice_channel = ctx.author.voice.channel
+
+    channel = ctx.author.voice.channel
+
     if ctx.voice_client:
-        await ctx.voice_client.move_to(voice_channel)
-        await ctx.send(f"Anya moves to {voice_channel.name} 🕵️‍♀️")
+        await ctx.voice_client.move_to(channel)
+        await ctx.send(f"Anya moves to {channel.name} 🕵️‍♀️")
     else:
-        await voice_channel.connect()
-        await ctx.send(f"Anya joins {voice_channel.name}! 🎶")
+        await channel.connect()
+        await ctx.send(f"Anya joins {channel.name}! 🎶")
 
 @bot.command(name="anyaleave")
 async def anya_leave(ctx):
@@ -138,8 +123,8 @@ async def anya_leave(ctx):
         await ctx.send("Anya isn't in any voice channel right now~ 😢")
 
 # --- Run bot ---
-token = os.getenv('DISCORD_TOKEN')
-if token:
-    bot.run(token)
-else:
-    print("Missing DISCORD_TOKEN!")
+token = os.getenv("DISCORD_TOKEN")
+if not token:
+    raise RuntimeError("DISCORD_TOKEN is missing!")
+
+bot.run(token)
