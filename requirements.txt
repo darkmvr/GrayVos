@@ -15,5 +15,5 @@ yarl==1.20.1
 beautifulsoup4
 flask
 PyNaCl>=1.5.0
-yt-dlp>=2026.1.6
+yt-dlp>=2025.12.29
 discord.py>=2.5.2
