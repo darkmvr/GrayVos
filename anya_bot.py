@@ -40,72 +40,21 @@ FEED_SOURCES = [
 ]
 
 posted_titles = set()
-channel_id = int(os.getenv('CHANNEL_ID'))
+channel_id = int(os.getenv('CHANNEL_ID', 0))
 
 anya_quotes = [
-    "Anya found this bundle! Waku waku~~! 🥜",
-    "Anya spy mission: deliver new games. Success! 👀",
-    "Oooh, Anya thinks you might like this one!",
-    "This bundle smells like peanuts and fun. 🥜",
-    "Hehe~ chichi would buy this for sure.",
-    "New games = more friends = world peace!",
-    "Anya read minds and this one looked good!",
-    "Waku waku~! Another bundle spotted!",
-    "This one... has Anya vibes~",
-    "Heh! Anya is best bundle spy!",
-    "Spy report complete! Bundle delivered.",
-    "Your mission is to click this bundle! 🕵️",
-    "chichi would approve this deal!",
-    "For the mission... for the fun... for the peanuts~",
-    "Ooooooh! Shiny bundle!",
-    "Hehe~ Anya pressed the button. Good button.",
-    "Waku waku~! Anya did something useful!",
-    "Hah! Anya's spy senses were tingling!",
-    "Twilight would say this is 'efficient'!",
-    "Bond says this bundle has good vibes.",
-    "haha would smash if no one buys this one!",
-    "Anya detected value... 10/10 mission success!",
-    "More games = less homework, right? 😈",
-    "Waku waku~! Buy this or face peanut wrath!",
-    "Shhh... secret bundle intel! 🤫",
-    "Waku waku overload! This bundle is top tier~",
-    "This deal made Anya's face go ⊙﹏⊙",
-    "chichi doesn't know I posted this hehe~",
-    "Why does bundle smell like... victory?",
-    "Bundle detected! Waku waku alert~",
-    "Hmm... yes. Very bundle. Very wow~",
-    "This deal smells like spy success 🕶️",
-    "No lie detector needed—this bundle is good!",
-    "Even Chimera-san approves this one~"
+    # ... keep all your quotes here ...
 ]
 
 anya_music_quotes = [
-    "Waku waku~! Music makes Anya brain go brrr~ 🎶",
-    "Anya likes this song! Peanut rhythm detected! 🥜",
-    "Hehe~ chichi would tap foot to this one!",
-    "This song is VERY spy approved 🕵️‍♀️🎧",
-    "Anya feels smart listening to this music!",
-    "Music makes mission easier! Probably!",
-    "Waku waku~! This song has main character energy!",
-    "Anya dance time! Nobody look! 💃",
-    "Even Bond is vibing right now 🐶🎶",
-    "This song makes Anya feel like secret agent!",
-    "Hehe~ Anya pressed play. Good button.",
-    "Anya thinks this song is cool. Very cool.",
-    "Spy HQ background music activated 🎧",
-    "This music makes peanuts taste better 🥜✨",
-    "Anya heard this in chichi’s head!",
-    "Waku waku overload! Volume in heart increased!",
-    "This song = +10 spy power!",
-    "Anya would save this to playlist if Anya had one!",
-    "Music so good even lie detector says TRUE!",
-    "Anya approves this vibe! 👍",
-    "This song smells like adventure!",
-    "Hehe~ Anya nodding head like grown-up!",
-    "Anya calls this… a bop.",
-    "Mission update: vibes are excellent!",
-    "If this song was homework, Anya would do it!"
+    # ... keep all your music quotes here ...
 ]
+
+# --- Read cookies from environment ---
+cookies_content = os.getenv("YOUTUBE_COOKIES")
+if cookies_content:
+    with open("cookies.txt", "w", encoding="utf-8") as f:
+        f.write(cookies_content)
 
 # --- Events ---
 @bot.event
@@ -143,7 +92,6 @@ async def post_all_bundles(post_func):
             await post_func(embed=embed)
             found = True
 
-    # GG.deals scraping
     gg_bundles = fetch_gg_deals_bundles()
     for bundle in gg_bundles:
         if bundle["title"] in posted_titles:
@@ -232,11 +180,6 @@ def fetch_gg_deals_bundles():
 # --- Anya voice/music/watch commands ---
 @bot.command(name="anya")
 async def anya_voice(ctx, mode: str = None, *, query: str = None):
-    """
-    !anya watch  -> YouTube Watch Together
-    !anya play <url/search> -> play audio
-    !anya stop -> stop audio
-    """
     if not ctx.author.voice or not ctx.author.voice.channel:
         await ctx.send("Anya says: join voice first! 😤")
         return
@@ -252,7 +195,6 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         )
         return
 
-    # --- Watch Together ---
     if mode.lower() == "watch":
         invite = await voice_channel.create_invite(
             target_application_id=880218394199220334,
@@ -262,7 +204,6 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         await ctx.send(f"📺 **Anya starts YouTube time!**\n👉 {invite.url}")
         return
 
-    # --- Play Music ---
     if mode.lower() == "play":
         if not query:
             await ctx.send("Anya needs a song to play! 😠")
@@ -278,8 +219,10 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             "quiet": True,
             "default_search": "ytsearch",
             "noplaylist": True,
-            "cookiefile": "cookies.txt"  # <-- THIS is the key for restricted videos
         }
+
+        if cookies_content:
+            ydl_opts["cookiefile"] = "cookies.txt"
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -288,22 +231,20 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
                     info = info["entries"][0]
                 url = info["url"]
                 title = info.get("title", "Unknown")
+
+            vc.play(
+                discord.FFmpegPCMAudio(url),
+                after=lambda e: print(f"Audio ended: {e}")
+            )
+
+            await ctx.send(
+                f"🎶 **Anya plays:** {title} ♪\n"
+                f"{random.choice(anya_music_quotes)}"
+            )
         except Exception as e:
             await ctx.send(f"Anya failed to get this song: {e}")
-            return
-
-        vc.play(
-            discord.FFmpegPCMAudio(url),
-            after=lambda e: print(f"Audio ended: {e}")
-        )
-
-        await ctx.send(
-            f"🎶 **Anya plays:** {title} ♪\n"
-            f"{random.choice(anya_music_quotes)}"
-        )
         return
 
-    # --- Stop ---
     if mode.lower() == "stop":
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
