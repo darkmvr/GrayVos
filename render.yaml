@@ -1,5 +1,7 @@
 services:
   - type: web
-    name: Anya
+    name: anya
     env: python
-    pythonVersion: "3.12.13"
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python anya_bot.py
