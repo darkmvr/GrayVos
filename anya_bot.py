@@ -5,7 +5,6 @@ import random
 import yt_dlp
 import tempfile
 
-# --- Discord bot setup ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -17,13 +16,11 @@ anya_music_quotes = [
     "Music makes mission easier! Probably!",
 ]
 
-# --- Events ---
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.Game("spying on music 👀"))
     print(f"✅ Anya has connected as {bot.user}")
 
-# --- Main command ---
 @bot.command(name="anya")
 async def anya_voice(ctx, mode: str = None, *, query: str = None):
     if not ctx.author.voice or not ctx.author.voice.channel:
@@ -32,7 +29,6 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
 
     voice_channel = ctx.author.voice.channel
 
-    # Help
     if mode is None:
         await ctx.send(
             "**Anya voice commands:**\n"
@@ -42,7 +38,6 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         )
         return
 
-    # Watch Together
     if mode.lower() == "watch":
         invite = await voice_channel.create_invite(
             target_application_id=880218394199220334,
@@ -52,7 +47,6 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         await ctx.send(f"📺 **Anya starts YouTube time!**\n👉 {invite.url}")
         return
 
-    # Play music
     if mode.lower() == "play":
         if not query:
             await ctx.send("Anya needs a song to play! 😠")
@@ -62,22 +56,15 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         if vc is None:
             vc = await voice_channel.connect()
 
-        # Download audio to temp file (deploy safe)
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "quiet": True,
-            "default_search": "ytsearch",
-            "noplaylist": True,
-            "outtmpl": "%(title)s.%(ext)s",
-        }
+        ydl_opts = {"format": "bestaudio/best", "quiet": True, "default_search": "ytsearch", "noplaylist": True}
 
+        # --- DOWNLOAD AUDIO TO TEMP FILE ---
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(query, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
                 title = info.get("title", "Unknown")
-                # yt-dlp automatically saved file as: title.ext
                 audio_file = ydl.prepare_filename(info)
         except Exception as e:
             await ctx.send(f"❌ Failed to get the song: {e}")
@@ -86,7 +73,7 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         if vc.is_playing():
             vc.stop()
 
-        # Play using the downloaded file
+        # --- PLAY AUDIO FROM FILE ---
         vc.play(
             discord.FFmpegPCMAudio(audio_file, options="-vn"),
             after=lambda e: print(f"Audio ended: {e}")
@@ -95,7 +82,6 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         await ctx.send(f"🎶 **Anya plays:** {title} ♪\n{random.choice(anya_music_quotes)}")
         return
 
-    # Stop music
     if mode.lower() == "stop":
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
@@ -106,13 +92,11 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
 
     await ctx.send(f"Unknown mode `{mode}`. Type `!anya` for commands.")
 
-# --- Join / Leave commands ---
 @bot.command(name="anyajoin")
 async def anya_join(ctx):
     if not ctx.author.voice or not ctx.author.voice.channel:
         await ctx.send("You need to be in a voice channel! 😤")
         return
-
     channel = ctx.author.voice.channel
     if ctx.voice_client:
         await ctx.voice_client.move_to(channel)
@@ -129,7 +113,6 @@ async def anya_leave(ctx):
     else:
         await ctx.send("Anya isn't in any voice channel right now~ 😢")
 
-# --- Run bot ---
 token = os.getenv("DISCORD_TOKEN")
 if not token:
     raise RuntimeError("DISCORD_TOKEN is missing!")
