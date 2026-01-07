@@ -3,6 +3,7 @@ from discord.ext import commands
 import os
 import random
 import yt_dlp
+import asyncio
 
 # --- Discord bot setup ---
 intents = discord.Intents.default()
@@ -82,16 +83,17 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             await ctx.send(f"❌ Failed to get the song: {e}")
             return
 
-        # Stream safely with FFmpeg
-        audio_source = discord.FFmpegPCMAudio(
-            url,
-            before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-            options="-vn"
-        )
-
+        # Stop currently playing audio
         if vc.is_playing():
-            vc.stop()  # Stop current song if playing
+            vc.stop()
 
+        # Play safely using FFmpeg streaming
+        ffmpeg_options = {
+            "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+            "options": "-vn"
+        }
+
+        audio_source = discord.FFmpegPCMAudio(url, **ffmpeg_options)
         vc.play(audio_source, after=lambda e: print(f"Audio ended: {e}"))
 
         await ctx.send(
