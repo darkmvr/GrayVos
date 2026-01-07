@@ -10,7 +10,6 @@ from flask import Flask
 import threading
 import asyncio
 import yt_dlp
-import nacl  # ensures PyNaCl is imported for voice support
 
 # --- Flask keep-alive ---
 app = Flask("")
@@ -41,14 +40,71 @@ FEED_SOURCES = [
 ]
 
 posted_titles = set()
-channel_id = int(os.getenv('CHANNEL_ID', 0))
+channel_id = int(os.getenv('CHANNEL_ID'))
 
 anya_quotes = [
-    # ... (keep all your Anya quotes here, same as your original code) ...
+    "Anya found this bundle! Waku waku~~! 🥜",
+    "Anya spy mission: deliver new games. Success! 👀",
+    "Oooh, Anya thinks you might like this one!",
+    "This bundle smells like peanuts and fun. 🥜",
+    "Hehe~ chichi would buy this for sure.",
+    "New games = more friends = world peace!",
+    "Anya read minds and this one looked good!",
+    "Waku waku~! Another bundle spotted!",
+    "This one... has Anya vibes~",
+    "Heh! Anya is best bundle spy!",
+    "Spy report complete! Bundle delivered.",
+    "Your mission is to click this bundle! 🕵️",
+    "chichi would approve this deal!",
+    "For the mission... for the fun... for the peanuts~",
+    "Ooooooh! Shiny bundle!",
+    "Hehe~ Anya pressed the button. Good button.",
+    "Waku waku~! Anya did something useful!",
+    "Hah! Anya's spy senses were tingling!",
+    "Twilight would say this is 'efficient'!",
+    "Bond says this bundle has good vibes.",
+    "haha would smash if no one buys this one!",
+    "Anya detected value... 10/10 mission success!",
+    "More games = less homework, right? 😈",
+    "Waku waku~! Buy this or face peanut wrath!",
+    "Shhh... secret bundle intel! 🤫",
+    "Waku waku overload! This bundle is top tier~",
+    "This deal made Anya's face go ⊙﹏⊙",
+    "chichi doesn't know I posted this hehe~",
+    "Why does bundle smell like... victory?",
+    "Bundle detected! Waku waku alert~",
+    "Hmm... yes. Very bundle. Very wow~",
+    "This deal smells like spy success 🕶️",
+    "No lie detector needed—this bundle is good!",
+    "Even Chimera-san approves this one~"
 ]
 
 anya_music_quotes = [
-    # ... (keep all your music quotes here, same as original) ...
+    "Waku waku~! Music makes Anya brain go brrr~ 🎶",
+    "Anya likes this song! Peanut rhythm detected! 🥜",
+    "Hehe~ chichi would tap foot to this one!",
+    "This song is VERY spy approved 🕵️‍♀️🎧",
+    "Anya feels smart listening to this music!",
+    "Music makes mission easier! Probably!",
+    "Waku waku~! This song has main character energy!",
+    "Anya dance time! Nobody look! 💃",
+    "Even Bond is vibing right now 🐶🎶",
+    "This song makes Anya feel like secret agent!",
+    "Hehe~ Anya pressed play. Good button.",
+    "Anya thinks this song is cool. Very cool.",
+    "Spy HQ background music activated 🎧",
+    "This music makes peanuts taste better 🥜✨",
+    "Anya heard this in chichi’s head!",
+    "Waku waku overload! Volume in heart increased!",
+    "This song = +10 spy power!",
+    "Anya would save this to playlist if Anya had one!",
+    "Music so good even lie detector says TRUE!",
+    "Anya approves this vibe! 👍",
+    "This song smells like adventure!",
+    "Hehe~ Anya nodding head like grown-up!",
+    "Anya calls this… a bop.",
+    "Mission update: vibes are excellent!",
+    "If this song was homework, Anya would do it!"
 ]
 
 # --- Events ---
@@ -196,35 +252,33 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
         )
         return
 
-    # --- WATCH TOGETHER ---
+    # --- Watch Together ---
     if mode.lower() == "watch":
         invite = await voice_channel.create_invite(
-            target_application_id=880218394199220334,  # YouTube Together ID
+            target_application_id=880218394199220334,
             target_type=2,
             max_age=0
         )
         await ctx.send(f"📺 **Anya starts YouTube time!**\n👉 {invite.url}")
         return
 
-    # --- PLAY MUSIC ---
+    # --- Play Music ---
     if mode.lower() == "play":
         if not query:
             await ctx.send("Anya needs a song to play! 😠")
             return
 
-        # connect to voice
         if ctx.voice_client is None:
             vc = await voice_channel.connect()
         else:
             vc = ctx.voice_client
-            if vc.is_playing():
-                vc.stop()  # stop previous audio
 
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
             "default_search": "ytsearch",
-            "noplaylist": True
+            "noplaylist": True,
+            "cookiefile": "cookies.txt"  # <-- THIS is the key for restricted videos
         }
 
         try:
@@ -232,11 +286,8 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
                 info = ydl.extract_info(query, download=False)
                 if "entries" in info:
                     info = info["entries"][0]
-                url = info.get("url")
+                url = info["url"]
                 title = info.get("title", "Unknown")
-                if not url:
-                    await ctx.send("Anya cannot play this song 😢")
-                    return
         except Exception as e:
             await ctx.send(f"Anya failed to get this song: {e}")
             return
@@ -245,10 +296,14 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             discord.FFmpegPCMAudio(url),
             after=lambda e: print(f"Audio ended: {e}")
         )
-        await ctx.send(f"🎶 **Anya plays:** {title} ♪\n{random.choice(anya_music_quotes)}")
+
+        await ctx.send(
+            f"🎶 **Anya plays:** {title} ♪\n"
+            f"{random.choice(anya_music_quotes)}"
+        )
         return
 
-    # --- STOP ---
+    # --- Stop ---
     if mode.lower() == "stop":
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
@@ -263,7 +318,9 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             await ctx.send("Anya wasn't playing anything~")
         return
 
-    await ctx.send(f"Unknown mode `{mode}`. Type `!anya` to see commands.")
+    await ctx.send(
+        f"Unknown mode `{mode}`. Type `!anya` to see available commands."
+    )
 
 # --- Join/Leave commands ---
 @bot.command(name="anyajoin")
