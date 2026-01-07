@@ -57,10 +57,12 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             await ctx.send("Anya needs a song to play! 😠")
             return
 
+        # Connect to voice channel if not already
         vc = ctx.voice_client
         if vc is None:
             vc = await voice_channel.connect()
 
+        # YT-DLP options
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
@@ -68,18 +70,29 @@ async def anya_voice(ctx, mode: str = None, *, query: str = None):
             "noplaylist": True,
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-            if "entries" in info:
-                info = info["entries"][0]
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(query, download=False)
+                if "entries" in info:
+                    info = info["entries"][0]
 
-            url = info["url"]
-            title = info.get("title", "Unknown")
+                url = info["url"]
+                title = info.get("title", "Unknown")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to get the song: {e}")
+            return
 
-        vc.play(
-            discord.FFmpegPCMAudio(url),
-            after=lambda e: print(f"Audio ended: {e}")
+        # Stream safely with FFmpeg
+        audio_source = discord.FFmpegPCMAudio(
+            url,
+            before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+            options="-vn"
         )
+
+        if vc.is_playing():
+            vc.stop()  # Stop current song if playing
+
+        vc.play(audio_source, after=lambda e: print(f"Audio ended: {e}"))
 
         await ctx.send(
             f"🎶 **Anya plays:** {title} ♪\n"
